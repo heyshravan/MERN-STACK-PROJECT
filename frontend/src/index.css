@@ -91,3 +91,266 @@ footer {
 footer p {
   margin-bottom: 6px;
 }
+
+
+/* Add Destination Form */
+.add-place-section {
+  max-width: 750px;
+  margin: 40px auto;
+  padding: 30px;
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08);
+}
+
+.add-place-section h2 {
+  margin-bottom: 25px;
+  text-align: center;
+}
+
+.add-place-section form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.add-place-section input,
+.add-place-section textarea,
+.add-place-section select {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 13px;
+  border: 1px solid #ccc;
+  border-radius: 7px;
+  font-size: 16px;
+}
+
+.add-place-section textarea {
+  min-height: 100px;
+  resize: vertical;
+}
+
+.add-place-section button {
+  padding: 14px;
+  background: #155744;
+  color: white;
+  border: none;
+  border-radius: 7px;
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.add-place-section button:hover {
+  background: #0d4032;
+}
+
+/* Destination Cards */
+.places-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 25px;
+  margin-top: 25px;
+}
+
+.place-card {
+  padding: 18px;
+  background: white;
+  border-radius: 10px;
+  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.08);
+}
+
+.place-card img {
+  width: 100%;
+  height: 200px;
+  object-fit: cover;
+  border-radius: 8px;
+}
+
+
+.place-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.place-actions button {
+  flex: 1;
+  padding: 10px;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  background: #155744;
+  color: white;
+}
+
+.place-actions button:hover {
+  opacity: 0.85;
+}
+
+
+
+/* Authentication Pages */
+
+.auth-container {
+  min-height: 75vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 40px 20px;
+}
+
+.auth-form {
+  width: 100%;
+  max-width: 420px;
+  padding: 35px;
+  border-radius: 12px;
+  background: #171717;
+  border: 1px solid #383838;
+}
+
+.auth-form h2 {
+  text-align: center;
+  margin-bottom: 10px;
+  color: #ffffff;
+}
+
+.auth-form p {
+  text-align: center;
+  color: #bbbbbb;
+  margin-bottom: 20px;
+}
+
+.auth-form input {
+  width: 100%;
+  padding: 13px;
+  margin-bottom: 16px;
+  border: 1px solid #444;
+  border-radius: 6px;
+  background: #242424;
+  color: white;
+  box-sizing: border-box;
+}
+
+.auth-form button {
+  width: 100%;
+  padding: 13px;
+  background: #b47a45;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 16px;
+}
+
+.auth-form a {
+  color: #d99b61;
+  text-decoration: none;
+}
+
+.success-message {
+  color: #55cc88 !important;
+}
+
+.error-message {
+  color: #ff7777 !important;
+}
+
+
+
+/* ExploreX Navbar */
+
+.navbar {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  width: 100%;
+  padding: 18px 35px;
+  background: #174c3c;
+  box-sizing: border-box;
+  gap: 25px;
+}
+
+.nav-logo {
+  white-space: nowrap;
+}
+
+.nav-logo a {
+  color: #d99b61;
+  font-size: 24px;
+  font-weight: bold;
+  text-decoration: none;
+}
+
+.navbar .nav-links {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 25px;
+}
+
+.navbar .auth-links {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 18px;
+  white-space: nowrap;
+}
+
+.navbar .nav-links a,
+.navbar .auth-links a {
+  color: white;
+  text-decoration: none;
+  font-size: 15px;
+}
+
+.navbar .nav-links a:hover,
+.navbar .auth-links a:hover {
+  color: #d99b61;
+}
+
+.navbar .auth-links .register-btn {
+  background: #b47a45;
+  padding: 9px 16px;
+  border-radius: 6px;
+  color: white;
+}
+
+.navbar .auth-links .register-btn:hover {
+  background: #d99b61;
+  color: white;
+}
+
+/* Responsive navbar */
+@media (max-width: 900px) {
+  .navbar {
+    grid-template-columns: 1fr auto;
+  }
+
+  .navbar .nav-links {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+}
+
+
+.navbar .user-name {
+  color: white;
+  white-space: nowrap;
+}
+
+.navbar .logout-btn {
+  padding: 9px 16px;
+  background: #b47a45;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.navbar .logout-btn:hover {
+  background: #d99b61;
+}
