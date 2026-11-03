@@ -395,14 +395,14 @@ export const getAIStatus = async () => {
   return data;
 };
 
-// CHAT with AI assistant
-export const chatWithAI = async (message, history = []) => {
+// CHAT with AI assistant (supports contextual destination guide & language)
+export const chatWithAI = async (message, history = [], destinationContext = null, language = "en") => {
   const response = await fetch(`${API_BASE_URL}/ai/chat`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ message, history }),
+    body: JSON.stringify({ message, history, destinationContext, language }),
   });
 
   const data = await response.json();

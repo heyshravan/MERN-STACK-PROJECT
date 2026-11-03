@@ -3,6 +3,7 @@ import { useParams, useSearchParams, Link, useNavigate } from "react-router-dom"
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { useLanguage, SUPPORTED_LANGUAGES } from "../context/LanguageContext";
+import { chatWithAI } from "../services/api";
 
 // Fix Leaflet marker icon asset paths
 delete L.Icon.Default.prototype._getIconUrl;
@@ -11,6 +12,76 @@ L.Icon.Default.mergeOptions({
   iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
   shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
 });
+
+// Lightweight markdown renderer for clean AI responses
+function formatMarkdown(text) {
+  if (!text) return null;
+  const lines = text.split("\n");
+  const elements = [];
+  let currentList = [];
+
+  const flushList = () => {
+    if (currentList.length > 0) {
+      elements.push(
+        <ul key={`ul-${elements.length}`} className="ai-formatted-ul">
+          {currentList.map((item, idx) => (
+            <li key={idx}>{parseInline(item)}</li>
+          ))}
+        </ul>
+      );
+      currentList = [];
+    }
+  };
+
+  const parseInline = (str) => {
+    const parts = [];
+    const regex = /(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`)/g;
+    let match;
+    let lastIndex = 0;
+    let keyIdx = 0;
+
+    while ((match = regex.exec(str)) !== null) {
+      if (match.index > lastIndex) {
+        parts.push(str.substring(lastIndex, match.index));
+      }
+      const token = match[0];
+      if (token.startsWith("**") && token.endsWith("**")) {
+        parts.push(<strong key={keyIdx++}>{token.slice(2, -2)}</strong>);
+      } else if (token.startsWith("*") && token.endsWith("*")) {
+        parts.push(<em key={keyIdx++}>{token.slice(1, -1)}</em>);
+      } else if (token.startsWith("`") && token.endsWith("`")) {
+        parts.push(<code key={keyIdx++}>{token.slice(1, -1)}</code>);
+      }
+      lastIndex = regex.lastIndex;
+    }
+    if (lastIndex < str.length) {
+      parts.push(str.substring(lastIndex));
+    }
+    return parts.length > 0 ? parts : str;
+  };
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!line) {
+      flushList();
+      continue;
+    }
+    if (line.startsWith("### ")) {
+      flushList();
+      elements.push(<h3 key={`h3-${i}`} className="ai-heading-3">{parseInline(line.slice(4))}</h3>);
+    } else if (line.startsWith("## ")) {
+      flushList();
+      elements.push(<h2 key={`h2-${i}`} className="ai-heading-2">{parseInline(line.slice(3))}</h2>);
+    } else if (line.startsWith("- ") || line.startsWith("* ")) {
+      currentList.push(line.slice(2));
+    } else {
+      flushList();
+      elements.push(<p key={`p-${i}`} className="ai-paragraph">{parseInline(line)}</p>);
+    }
+  }
+  flushList();
+  return elements;
+}
 
 function Destination_Details() {
   const { slug } = useParams();
@@ -32,6 +103,10 @@ function Destination_Details() {
     currentlySpeakingText,
     isSpeechSynthesisSupported,
     translateText,
+    isListening,
+    startVoiceSearch,
+    stopVoiceSearch,
+    isSpeechRecognitionSupported,
   } = useLanguage();
 
   const [destination, setDestination] = useState(null);
@@ -45,6 +120,12 @@ function Destination_Details() {
 
   // Lightbox state for photo gallery
   const [lightboxIndex, setLightboxIndex] = useState(null);
+
+  // AI Assistant Chat State
+  const [aiMessages, setAiMessages] = useState([]);
+  const [aiInput, setAiInput] = useState("");
+  const [aiLoading, setAiLoading] = useState(false);
+  const [activeSpeechMsgId, setActiveSpeechMsgId] = useState(null);
 
   // Map reference
   const mapContainerRef = useRef(null);
@@ -261,6 +342,173 @@ function Destination_Details() {
         translatedExtract || destination.extract || destination.subtitle
       }`;
       speak(speechContent, language);
+    }
+  };
+
+  // Initialize AI assistant welcome message when destination loads
+  useEffect(() => {
+    if (destination) {
+      setAiMessages([
+        {
+          id: "welcome",
+          role: "assistant",
+          text: `Hello explorer! 🌍 I am your **${destination.title} AI Travel Guide**. Ask me about the best 3-day itineraries, regional cuisine, weather packing tips, photography spots, or budget advice!`,
+          isLiveAI: false,
+          isGreeting: true,
+          time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        },
+      ]);
+    }
+  }, [destination]);
+
+  // Contextual Suggested Questions in Active Language
+  const getContextualPrompts = () => {
+    if (!destination) return [];
+    const t = destination.title;
+    if (language === "hi") {
+      return [
+        `${t} के लिए 3 दिन की यात्रा योजना बनाएं`,
+        `${t} के प्रसिद्ध स्थानीय व्यंजन और भोजन`,
+        `${t} के लिए मौसम अनुसार पैकिंग चेकलिस्ट`,
+        `${t} के लिए सुरक्षा एवं परिवहन सुझाव`,
+        `${t} का अनुमानित दैनिक यात्रा बजट`,
+      ];
+    }
+    if (language === "bn") {
+      return [
+        `${t}-এর জন্য ৩ দিনের ভ্রমণ পরিকল্পনা তৈরি করুন`,
+        `${t}-এর বিখ্যাত স্থানীয় খাবার ও মিষ্টি`,
+        `${t}-এর জন্য প্যাকিং নির্দেশিকা`,
+        `${t}-এর নিরাপত্তা ও যাতায়াতের নির্দেশাবলী`,
+        `${t}-এর আনুমানিক দৈনিক ভ্রমণ বাজেট`,
+      ];
+    }
+    if (language === "es") {
+      return [
+        `Planifica un itinerario de 3 días para ${t}`,
+        `¿Cuáles son los platos locales típicos de ${t}?`,
+        `Lista de equipaje recomendada para ${t}`,
+        `Consejos de seguridad y transporte para ${t}`,
+        `Presupuesto diario estimado para ${t}`,
+      ];
+    }
+    if (language === "fr") {
+      return [
+        `Planifier un itinéraire de 3 jours à ${t}`,
+        `Quels sont les plats et spécialités locales à ${t} ?`,
+        `Que mettre dans sa valise pour ${t} ?`,
+        `Conseils de sécurité et transports à ${t}`,
+        `Budget journalier estimé pour ${t}`,
+      ];
+    }
+    return [
+      `Plan a 3-day itinerary for ${t}`,
+      `Must-try local dishes and cuisine in ${t}`,
+      `Travel packing checklist for ${t}`,
+      `Safety tips & how to reach ${t}`,
+      `Estimated daily budget and money-saving tips`,
+    ];
+  };
+
+  // Send AI Question
+  const handleSendAIQuestion = async (queryText) => {
+    const textToSend = (queryText || aiInput).trim();
+    if (!textToSend || aiLoading) return;
+
+    const userMsg = {
+      id: `user-${Date.now()}`,
+      role: "user",
+      text: textToSend,
+      time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+    };
+
+    const newHistory = [...aiMessages, userMsg];
+    setAiMessages(newHistory);
+    setAiInput("");
+    setAiLoading(true);
+
+    try {
+      const historyPayload = newHistory.map((m) => ({ role: m.role, text: m.text }));
+      const res = await chatWithAI(textToSend, historyPayload, destination, language);
+
+      if (res && res.reply) {
+        setAiMessages((prev) => [
+          ...prev,
+          {
+            id: `ai-${Date.now()}`,
+            role: "assistant",
+            text: res.reply,
+            isLiveAI: Boolean(res.isLiveAI),
+            fallbackMode: Boolean(res.fallbackMode),
+            note: res.note || null,
+            time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+          },
+        ]);
+      } else {
+        setAiMessages((prev) => [
+          ...prev,
+          {
+            id: `ai-err-${Date.now()}`,
+            role: "assistant",
+            text: `⚠️ **Travel Guide Notice**: ${res?.message || "AI response temporarily unavailable."}`,
+            isError: true,
+            time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+          },
+        ]);
+      }
+    } catch (err) {
+      setAiMessages((prev) => [
+        ...prev,
+        {
+          id: `ai-err-${Date.now()}`,
+          role: "assistant",
+          text: `⚠️ **Service Error**: ${err.message || "Failed to reach AI service."}`,
+          isError: true,
+          time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        },
+      ]);
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
+  // Toggle Text-to-speech for AI Message
+  const handleToggleMessageSpeech = (msgId, text) => {
+    if (activeSpeechMsgId === msgId) {
+      if (isSpeaking) {
+        if (isPaused) {
+          resumeSpeech();
+        } else {
+          pauseSpeech();
+        }
+      } else {
+        speak(text, language);
+      }
+    } else {
+      speak(text, language);
+      setActiveSpeechMsgId(msgId);
+    }
+  };
+
+  const handleStopMessageSpeech = () => {
+    stopSpeech();
+    setActiveSpeechMsgId(null);
+  };
+
+  // Voice Search / STT for AI input
+  const handleAIVoiceInput = () => {
+    if (isListening) {
+      stopVoiceSearch();
+    } else {
+      startVoiceSearch({
+        onResult: (transcript) => {
+          setAiInput(transcript);
+        },
+        onError: (err) => {
+          console.warn("AI voice input error:", err);
+        },
+        langOverride: language,
+      });
     }
   };
 
@@ -790,7 +1038,166 @@ function Destination_Details() {
           </section>
         )}
 
-        {/* 10. INTERACTIVE LEAFLET MAP */}
+        {/* 10. CONTEXTUAL AI TRAVEL ASSISTANT & AUDIO GUIDE */}
+        <section className="dest-section dest-ai-section">
+          <div className="dest-section-header">
+            <h2>🤖 AI Travel Assistant for {destination.title}</h2>
+            <span className="dest-section-sub">
+              Ask about history, customized itineraries, regional cuisine, packing checklists, or local safety
+            </span>
+          </div>
+
+          <div className="dest-ai-container">
+            {/* Suggested Prompt Chips */}
+            <div className="dest-ai-prompt-chips">
+              <span className="chips-label">💡 Suggested Questions:</span>
+              <div className="chips-row">
+                {getContextualPrompts().map((prompt, idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    className="ai-chip-btn"
+                    onClick={() => handleSendAIQuestion(prompt)}
+                    disabled={aiLoading}
+                  >
+                    {prompt}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Chat Conversation Stream */}
+            <div className="dest-ai-chat-box">
+              {aiMessages.map((msg) => (
+                <div
+                  key={msg.id}
+                  className={`dest-ai-msg ${msg.role === "user" ? "user-msg" : "ai-msg"}`}
+                >
+                  <div className="msg-header-row">
+                    <span className="msg-author">
+                      {msg.role === "user" ? "👤 You" : `🤖 ExploreX AI Guide`}
+                    </span>
+                    {msg.role === "assistant" && !msg.isGreeting && (
+                      <span className={`msg-badge ${msg.isLiveAI ? "live-ai" : "dossier"}`}>
+                        {msg.isLiveAI ? "✨ Live Gemini AI" : "📋 Verified Dossier Synthesis"}
+                      </span>
+                    )}
+                    <span className="msg-time">{msg.time}</span>
+                  </div>
+
+                  <div className="msg-body">
+                    {formatMarkdown(msg.text)}
+                  </div>
+
+                  {msg.role === "assistant" && !msg.isError && (
+                    <div className="msg-audio-actions">
+                      <button
+                        type="button"
+                        className={`msg-audio-btn ${activeSpeechMsgId === msg.id && isSpeaking ? "active" : ""}`}
+                        onClick={() => handleToggleMessageSpeech(msg.id, msg.text)}
+                        title={
+                          activeSpeechMsgId === msg.id && isSpeaking
+                            ? isPaused
+                              ? "Resume Audio"
+                              : "Pause Audio"
+                            : "Listen to this answer"
+                        }
+                      >
+                        <span>
+                          {activeSpeechMsgId === msg.id && isSpeaking
+                            ? isPaused
+                              ? "▶️"
+                              : "⏸️"
+                            : "🔊"}
+                        </span>
+                        <span>
+                          {activeSpeechMsgId === msg.id && isSpeaking
+                            ? isPaused
+                              ? "Resume"
+                              : "Pause Audio"
+                            : "Listen to Guide"}
+                        </span>
+                      </button>
+
+                      {activeSpeechMsgId === msg.id && isSpeaking && (
+                        <button
+                          type="button"
+                          className="msg-audio-stop-btn"
+                          onClick={handleStopMessageSpeech}
+                          title="Stop Audio"
+                        >
+                          ⏹️ Stop
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ))}
+
+              {aiLoading && (
+                <div className="dest-ai-msg ai-msg loading-msg">
+                  <div className="msg-header-row">
+                    <span className="msg-author">🤖 ExploreX AI Guide</span>
+                    <span className="msg-badge live-ai">Thinking...</span>
+                  </div>
+                  <div className="ai-typing-indicator">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* AI Input Form */}
+            <form
+              className="dest-ai-input-form"
+              onSubmit={(e) => {
+                e.preventDefault();
+                handleSendAIQuestion();
+              }}
+            >
+              <input
+                type="text"
+                className="dest-ai-input"
+                placeholder={`Ask anything about ${destination.title} in ${language.toUpperCase()}...`}
+                value={aiInput}
+                onChange={(e) => setAiInput(e.target.value)}
+                disabled={aiLoading}
+              />
+
+              <button
+                type="button"
+                className={`ai-mic-btn ${isListening ? "listening" : ""}`}
+                onClick={handleAIVoiceInput}
+                disabled={!isSpeechRecognitionSupported || aiLoading}
+                title={isListening ? "Listening..." : "Voice input"}
+              >
+                {isListening ? "🔴" : "🎙️"}
+              </button>
+
+              <button
+                type="submit"
+                className="dest-ai-send-btn"
+                disabled={aiLoading || !aiInput.trim()}
+              >
+                ➤ Ask AI
+              </button>
+            </form>
+
+            <div className="dest-ai-footer-links">
+              <span>Need extended planning?</span>
+              <Link
+                to={`/ai-assistant?destination=${encodeURIComponent(destination.title)}`}
+                className="dest-ai-fullscreen-link"
+              >
+                Open Fullscreen AI Tourist Assistant with {destination.title} Context ↗
+              </Link>
+            </div>
+          </div>
+        </section>
+
+        {/* 11. INTERACTIVE LEAFLET MAP */}
         <section id="dest-map-section" className="dest-section dest-map-section">
           <div className="dest-section-header">
             <h2>🗺️ Interactive Map & Points of Interest</h2>

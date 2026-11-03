@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef } from "react";
+import { useSearchParams, Link } from "react-router-dom";
 import { getAIStatus, chatWithAI } from "../services/api";
+import { useLanguage } from "../context/LanguageContext";
 
 const QUICK_PROMPTS = [
   "Best historical destinations in India",
@@ -118,6 +120,26 @@ function formatMarkdown(text) {
 }
 
 function AIAssistant() {
+  const [searchParams] = useSearchParams();
+  const requestedDestination = searchParams.get("destination");
+  const [destinationContext, setDestinationContext] = useState(null);
+
+  const {
+    language,
+    speak,
+    pauseSpeech,
+    resumeSpeech,
+    stopSpeech,
+    isSpeaking,
+    isPaused,
+    startVoiceSearch,
+    stopVoiceSearch,
+    isListening,
+    isSpeechRecognitionSupported,
+  } = useLanguage();
+
+  const [activeSpeechMsgId, setActiveSpeechMsgId] = useState(null);
+
   const [activeTab, setActiveTab] = useState("chat"); // 'chat', 'recommend', 'itinerary'
   const [aiStatus, setAiStatus] = useState({ configured: false, provider: "Google Gemini" });
   const [messages, setMessages] = useState([
@@ -141,6 +163,29 @@ function AIAssistant() {
   });
 
   const chatEndRef = useRef(null);
+
+  // Load destination context if provided in query
+  useEffect(() => {
+    if (requestedDestination) {
+      fetch(`http://localhost:5000/api/destinations/details?q=${encodeURIComponent(requestedDestination)}`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => {
+          if (data && data.title) {
+            setDestinationContext(data);
+            setItineraryForm((prev) => ({ ...prev, destination: data.title }));
+            setMessages([
+              {
+                id: "dest-welcome",
+                role: "assistant",
+                text: `Hello explorer! 🌍 I have loaded verified travel intelligence for **${data.title}** (${data.type}), including live weather (${data.weather ? `${data.weather.temperature}°C, ${data.weather.condition}` : "Seasonal"}), ${data.attractions?.length || 0} nearby attractions, and estimated budget tiers. Ask me anything!`,
+                time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+              },
+            ]);
+          }
+        })
+        .catch((err) => console.warn("Failed to load destination context:", err));
+    }
+  }, [requestedDestination]);
 
   // Check AI configuration on load
   useEffect(() => {
@@ -192,7 +237,7 @@ function AIAssistant() {
         text: m.text,
       }));
 
-      const res = await chatWithAI(messageContent, apiHistory);
+      const res = await chatWithAI(messageContent, apiHistory, destinationContext, language);
 
       if (res.success && res.reply) {
         setMessages((prev) => [
@@ -297,6 +342,25 @@ function AIAssistant() {
         ) : (
           <div className="ai-status-banner warning">
             ⚙️ <strong>Live AI Configuration Notice</strong>: Real-time responses require a Google Gemini API key. Add <code>GEMINI_API_KEY=your_key</code> in <code>backend/.env</code> and restart the backend server.
+          </div>
+        )}
+
+        {/* Active Destination Focus Banner */}
+        {destinationContext && (
+          <div className="ai-dest-focus-banner">
+            <div className="dest-focus-info">
+              <span className="dest-focus-pin">📍</span>
+              <div>
+                <strong>Active Destination Focus: {destinationContext.title}</strong> ({destinationContext.type})
+                <span className="dest-focus-meta">
+                  {destinationContext.weather ? ` • ${destinationContext.weather.icon} ${destinationContext.weather.temperature}°C` : ""}
+                  {destinationContext.attractions?.length ? ` • ${destinationContext.attractions.length} verified attractions` : ""}
+                </span>
+              </div>
+            </div>
+            <Link to={`/destination/${destinationContext.slug}`} className="dest-focus-link">
+              View Full Guide ↗
+            </Link>
           </div>
         )}
 
@@ -487,6 +551,49 @@ function AIAssistant() {
                     <div className={`ai-bubble ${msg.isError ? "error" : ""}`}>
                       {msg.role === "assistant" ? formatMarkdown(msg.text) : msg.text}
                     </div>
+
+                    {msg.role === "assistant" && !msg.isError && (
+                      <div className="ai-bubble-audio-actions">
+                        <button
+                          type="button"
+                          className={`ai-speech-btn ${activeSpeechMsgId === msg.id && isSpeaking ? "active" : ""}`}
+                          onClick={() => {
+                            if (activeSpeechMsgId === msg.id && isSpeaking) {
+                              if (isPaused) resumeSpeech();
+                              else pauseSpeech();
+                            } else {
+                              speak(msg.text, language);
+                              setActiveSpeechMsgId(msg.id);
+                            }
+                          }}
+                          title={
+                            activeSpeechMsgId === msg.id && isSpeaking
+                              ? isPaused
+                                ? "Resume audio"
+                                : "Pause audio"
+                              : "Listen to answer"
+                          }
+                        >
+                          {activeSpeechMsgId === msg.id && isSpeaking
+                            ? isPaused
+                              ? "▶️ Resume"
+                              : "⏸️ Pause"
+                            : "🔊 Listen"}
+                        </button>
+                        {activeSpeechMsgId === msg.id && isSpeaking && (
+                          <button
+                            type="button"
+                            className="ai-speech-stop"
+                            onClick={() => {
+                              stopSpeech();
+                              setActiveSpeechMsgId(null);
+                            }}
+                          >
+                            ⏹️ Stop
+                          </button>
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   {msg.role === "user" && <div className="ai-avatar user">👤</div>}
@@ -530,6 +637,25 @@ function AIAssistant() {
                 onKeyDown={handleKeyDown}
                 disabled={loading}
               />
+              <button
+                type="button"
+                className={`ai-mic-btn ${isListening ? "listening" : ""}`}
+                onClick={() => {
+                  if (isListening) {
+                    stopVoiceSearch();
+                  } else {
+                    startVoiceSearch({
+                      onResult: (transcript) => setInputMessage(transcript),
+                      langOverride: language,
+                    });
+                  }
+                }}
+                disabled={!isSpeechRecognitionSupported || loading}
+                title={isListening ? "Listening..." : "Voice input"}
+              >
+                {isListening ? "🔴" : "🎙️"}
+              </button>
+
               <button
                 type="submit"
                 className="ai-send-btn"
