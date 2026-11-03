@@ -1,4 +1,5 @@
 // AI Tourist Assistant Controller for ExploreX
+const destinationService = require("../services/destinationService");
 
 const SYSTEM_INSTRUCTION = `You are ExploreX AI Tourist Assistant, a world-class travel guide and vacation planning expert.
 Your mission is to help travelers discover incredible destinations, uncover hidden gems, plan realistic day-by-day itineraries, learn about local history and culture, and prepare with essential travel tips and packing checklists.
@@ -151,12 +152,27 @@ const chatWithAI = async (req, res) => {
       });
     }
 
+    // Normalize destination context (if string was passed, auto-fetch full destination dossier)
+    let activeContext = destinationContext;
+    if (typeof destinationContext === "string" && destinationContext.trim()) {
+      try {
+        const details = await destinationService.getDestinationDetails(destinationContext.trim());
+        if (details) {
+          activeContext = details;
+        } else {
+          activeContext = { title: destinationContext.trim() };
+        }
+      } catch (err) {
+        activeContext = { title: destinationContext.trim() };
+      }
+    }
+
     const apiKey = process.env.GEMINI_API_KEY?.trim();
 
-    // If no API key is provided, provide authentic factual synthesis if destinationContext exists
+    // If no API key is provided, provide authentic factual synthesis if activeContext exists
     if (!apiKey || apiKey === "your_gemini_api_key_here") {
-      if (destinationContext && destinationContext.title) {
-        const offlineReply = generateContextualDossierReply(message, destinationContext, language);
+      if (activeContext && activeContext.title) {
+        const offlineReply = generateContextualDossierReply(message, activeContext, language);
         return res.status(200).json({
           success: true,
           configured: false,
@@ -178,26 +194,26 @@ const chatWithAI = async (req, res) => {
     // Build Context-Aware System Instruction
     let contextualSystemPrompt = SYSTEM_INSTRUCTION;
 
-    if (destinationContext && destinationContext.title) {
+    if (activeContext && activeContext.title) {
       contextualSystemPrompt += `\n\nACTIVE DESTINATION CONTEXT:
-Destination: ${destinationContext.title} (${destinationContext.type || "Tourist Destination"})
-Subtitle: ${destinationContext.subtitle || ""}
-Factual Overview: ${destinationContext.extract || ""}
-Coordinates: ${destinationContext.coordinates ? `Lat ${destinationContext.coordinates.lat}, Lon ${destinationContext.coordinates.lon}` : "N/A"}
-Live Weather: ${destinationContext.weather ? `${destinationContext.weather.temperature}°C, ${destinationContext.weather.condition}. Advisory: ${destinationContext.weather.advisory}` : "Not available"}
+Destination: ${activeContext.title} (${activeContext.type || "Tourist Destination"})
+Subtitle: ${activeContext.subtitle || ""}
+Factual Overview: ${activeContext.extract || ""}
+Coordinates: ${activeContext.coordinates ? `Lat ${activeContext.coordinates.lat}, Lon ${activeContext.coordinates.lon}` : "N/A"}
+Live Weather: ${activeContext.weather ? `${activeContext.weather.temperature}°C, ${activeContext.weather.condition}. Advisory: ${activeContext.weather.advisory}` : "Not available"}
 Nearby Attractions (Verified via Geosearch): ${
-        destinationContext.attractions
-          ? destinationContext.attractions.map((a) => `${a.name} (~${a.distanceKm} km)`).join("; ")
+        activeContext.attractions
+          ? activeContext.attractions.map((a) => `${a.name} (~${a.distanceKm} km)`).join("; ")
           : "N/A"
       }
-Best Time to Visit: ${destinationContext.travelInfo?.bestTime || "Seasonal"}
-Recommended Duration: ${destinationContext.travelInfo?.recommendedDuration || "3-4 Days"}
-How to Reach: Air: ${destinationContext.travelInfo?.howToReach?.air || "N/A"}; Rail: ${destinationContext.travelInfo?.howToReach?.rail || "N/A"}; Road: ${destinationContext.travelInfo?.howToReach?.road || "N/A"}
-Local Transport: ${destinationContext.travelInfo?.localTransport || "N/A"}
-Safety Tips: ${destinationContext.travelInfo?.safetyTips?.join("; ") || "Standard precautions"}
+Best Time to Visit: ${activeContext.travelInfo?.bestTime || "Seasonal"}
+Recommended Duration: ${activeContext.travelInfo?.recommendedDuration || "3-4 Days"}
+How to Reach: Air: ${activeContext.travelInfo?.howToReach?.air || "N/A"}; Rail: ${activeContext.travelInfo?.howToReach?.rail || "N/A"}; Road: ${activeContext.travelInfo?.howToReach?.road || "N/A"}
+Local Transport: ${activeContext.travelInfo?.localTransport || "N/A"}
+Safety Tips: ${activeContext.travelInfo?.safetyTips?.join("; ") || "Standard precautions"}
 Estimated Budget Tiers: ${
-        destinationContext.budget?.tiers
-          ? destinationContext.budget.tiers.map((t) => `${t.tier}: ${t.dailyEstimateINR} (${t.dailyEstimateUSD})`).join(" | ")
+        activeContext.budget?.tiers
+          ? activeContext.budget.tiers.map((t) => `${t.tier}: ${t.dailyEstimateINR} (${t.dailyEstimateUSD})`).join(" | ")
           : "Standard guidelines"
       }
 
