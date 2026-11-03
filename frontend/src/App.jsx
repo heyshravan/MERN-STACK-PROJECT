@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "./context/AuthContext";
+import { LanguageProvider } from "./context/LanguageContext";
 
 import Header_com from "./components/Header_com";
 import Footer_com from "./components/Footer_com";
@@ -19,25 +20,27 @@ import Login from "./pages/Login";
 function App() {
   return (
     <AuthProvider>
-      <BrowserRouter>
-        <Header_com />
+      <LanguageProvider>
+        <BrowserRouter>
+          <Header_com />
 
-        <Routes>
-          <Route path="/" element={<Home />} />
-          <Route path="/explore" element={<Explore />} />
-          <Route path="/explore-3d" element={<Explore_3D />} />
-          <Route path="/navigate" element={<Navigate />} />
-          <Route path="/favorites" element={<Favorites />} />
-          <Route path="/hidden-gems" element={<HiddenGems />} />
-          <Route path="/about" element={<About />} />
-          <Route path="/ai-assistant" element={<AI_Assistant />} />
-          <Route path="/trip-planner" element={<Trip_Planner />} />
-          <Route path="/register" element={<Register />} />
-          <Route path="/login" element={<Login />} />
-        </Routes>
+          <Routes>
+            <Route path="/" element={<Home />} />
+            <Route path="/explore" element={<Explore />} />
+            <Route path="/explore-3d" element={<Explore_3D />} />
+            <Route path="/navigate" element={<Navigate />} />
+            <Route path="/favorites" element={<Favorites />} />
+            <Route path="/hidden-gems" element={<HiddenGems />} />
+            <Route path="/about" element={<About />} />
+            <Route path="/ai-assistant" element={<AI_Assistant />} />
+            <Route path="/trip-planner" element={<Trip_Planner />} />
+            <Route path="/register" element={<Register />} />
+            <Route path="/login" element={<Login />} />
+          </Routes>
 
-        <Footer_com />
-      </BrowserRouter>
+          <Footer_com />
+        </BrowserRouter>
+      </LanguageProvider>
     </AuthProvider>
   );
 }

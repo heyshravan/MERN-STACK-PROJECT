@@ -1,8 +1,10 @@
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import { useLanguage, SUPPORTED_LANGUAGES } from "../context/LanguageContext";
 
 function Header_com() {
   const { user, logout } = useAuth();
+  const { language, setLanguage } = useLanguage();
   const navigate = useNavigate();
 
   const handleLogout = () => {
@@ -29,6 +31,22 @@ function Header_com() {
       </nav>
 
       <div className="auth-links">
+        <div className="language-selector-wrap" title="Select Platform Language">
+          <span className="lang-icon" aria-hidden="true">🌐</span>
+          <select
+            className="language-select"
+            value={language}
+            onChange={(e) => setLanguage(e.target.value)}
+            aria-label="Select Language"
+          >
+            {SUPPORTED_LANGUAGES.map((l) => (
+              <option key={l.code} value={l.code}>
+                {l.flag} {l.nativeName} ({l.code.toUpperCase()})
+              </option>
+            ))}
+          </select>
+        </div>
+
         {user ? (
           <>
             <span className="user-name">

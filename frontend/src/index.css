@@ -321,6 +321,43 @@ footer p {
   color: white;
 }
 
+/* Global Language Selector */
+.language-selector-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: 20px;
+  padding: 4px 10px;
+  transition: all 0.2s ease;
+}
+
+.language-selector-wrap:hover {
+  background: rgba(255, 255, 255, 0.22);
+  border-color: #f0c879;
+}
+
+.language-selector-wrap .lang-icon {
+  font-size: 14px;
+}
+
+.language-select {
+  background: transparent;
+  color: white;
+  border: none;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  outline: none;
+}
+
+.language-select option {
+  background: #174c3c;
+  color: white;
+  padding: 6px;
+}
+
 /* Responsive navbar */
 @media (max-width: 900px) {
   .navbar {
