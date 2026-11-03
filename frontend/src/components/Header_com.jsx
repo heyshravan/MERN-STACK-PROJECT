@@ -1,4 +1,3 @@
-
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 
@@ -21,9 +20,10 @@ function Header_com() {
         <Link to="/">Home</Link>
         <Link to="/explore">Explore</Link>
         <Link to="/favorites">Favorites</Link>
-        <Link to="/about">About</Link>
+        <Link to="/hidden-gems">Hidden Gems</Link>
         <Link to="/ai-assistant">AI Assistant</Link>
         <Link to="/trip-planner">Trip Planner</Link>
+        <Link to="/about">About</Link>
       </nav>
 
       <div className="auth-links">

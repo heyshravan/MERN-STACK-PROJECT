@@ -46,7 +46,7 @@ function Favorites() {
         previous.filter((item) => item._id !== favoriteId)
       );
 
-      setMessage("Destination removed from favorites.");
+      setMessage("Destination removed from your favorites.");
     } catch (err) {
       setError(err.message || "Unable to remove favorite.");
     }
@@ -55,67 +55,100 @@ function Favorites() {
   if (!user) {
     return (
       <main className="favorites-page">
-        <h1>My Favorites</h1>
-        <p>Please login to view your saved destinations.</p>
-        <Link to="/login">Login Now</Link>
+        <div className="favorites-header">
+          <span className="ai-header-badge">❤️ Bookmarked Spots</span>
+          <h1>My Favorites</h1>
+          <p>Please login to your account to view and manage your saved destinations.</p>
+        </div>
+        <div style={{ textAlign: "center", marginTop: "24px" }}>
+          <Link to="/login" className="home-btn primary" style={{ display: "inline-block" }}>
+            Login Now
+          </Link>
+        </div>
       </main>
     );
   }
 
   return (
     <main className="favorites-page">
-      <h1>My Favorite Destinations ❤️</h1>
-      <p>Your saved places, all in one place.</p>
+      <div className="favorites-header">
+        <span className="ai-header-badge">❤️ Bookmarked Spots</span>
+        <h1>My Favorite Destinations</h1>
+        <p>Your saved places, easily accessible for your next adventure.</p>
+      </div>
 
       {message && <p className="success-message">{message}</p>}
       {error && <p className="error-message">{error}</p>}
 
       {loading ? (
-        <p>Loading your favorites...</p>
+        <p>Loading your saved destinations...</p>
       ) : favorites.length === 0 ? (
-        <div>
+        <div className="ai-tool-card" style={{ textAlign: "center", padding: "40px" }}>
           <h3>No favorites saved yet!</h3>
-          <p>Explore destinations and add your favorite places.</p>
-          <Link to="/explore">Explore Destinations</Link>
+          <p>Browse our destinations and click "Add to Favorites" on places you love.</p>
+          <Link
+            to="/explore"
+            className="home-btn primary"
+            style={{ display: "inline-block", marginTop: "16px" }}
+          >
+            Explore Destinations
+          </Link>
         </div>
       ) : (
-        <div className="places-grid">
-          {favorites.map((favorite) => {
-            const place = favorite.place;
+        <section className="places-section">
+          <h2>Saved Destinations ({favorites.length})</h2>
+          <div className="places-grid">
+            {favorites.map((favorite) => {
+              const place = favorite.place;
+              if (!place) return null;
 
-            if (!place) return null;
+              return (
+                <div className="place-card" key={favorite._id}>
+                  {place.image ? (
+                    <img
+                      src={place.image}
+                      alt={place.name}
+                      onError={(e) => {
+                        e.target.style.display = "none";
+                      }}
+                    />
+                  ) : (
+                    <div
+                      style={{
+                        height: "180px",
+                        background: "#174c3c",
+                        color: "white",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        fontSize: "36px",
+                        borderRadius: "8px",
+                      }}
+                    >
+                      🏛️
+                    </div>
+                  )}
 
-            return (
-              <div className="place-card" key={favorite._id}>
-                {place.image && (
-                  <img
-                    src={place.image}
-                    alt={place.name}
-                    className="place-image"
-                  />
-                )}
+                  <h3>{place.name}</h3>
+                  <p>{place.description}</p>
+                  <p>
+                    📍 {[place.city, place.state, place.country].filter(Boolean).join(", ")}
+                  </p>
+                  <span className="category-tag">{place.category || "General"}</span>
 
-                <h3>{place.name}</h3>
-                <p>{place.description}</p>
-                <p>
-                  {[place.city, place.state, place.country]
-                    .filter(Boolean)
-                    .join(", ")}
-                </p>
-                <p>Category: {place.category}</p>
-
-                <div className="place-actions">
-                  <button
-                    type="button"
-                    onClick={() => handleRemove(favorite._id)}
-                  >
-                    Remove from Favorites
-                  </button>
+                  <div className="place-actions">
+                    <button
+                      type="button"
+                      onClick={() => handleRemove(favorite._id)}
+                    >
+                      ❤️ Remove from Favorites
+                    </button>
+                  </div>
                 </div>
-              </div>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
+        </section>
       )}
     </main>
   );

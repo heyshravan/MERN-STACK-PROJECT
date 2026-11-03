@@ -2,11 +2,12 @@ import { useState, useEffect, useRef } from "react";
 import { getAIStatus, chatWithAI } from "../services/api";
 
 const QUICK_PROMPTS = [
-  "Best historical places in India",
+  "Best historical destinations in India",
   "Plan a 3-day budget trip",
   "Best hill stations to visit",
-  "Travel packing checklist",
+  "Best beach getaways to explore",
   "Suggest hidden tourist destinations",
+  "Travel packing checklist",
 ];
 
 const RECOMMENDATION_CATEGORIES = [

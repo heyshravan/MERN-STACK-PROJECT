@@ -1,6 +1,6 @@
 const express = require("express");
 const router = express.Router();
-const { optionalAuth } = require("../middleware/authMiddleware");
+const protect = require("../middleware/authMiddleware");
 
 const {
   createReview,
@@ -10,19 +10,19 @@ const {
   deleteReview,
 } = require("../controllers/reviewController");
 
-// CREATE a review
-router.post("/", optionalAuth, createReview);
+// CREATE a review (logged-in user)
+router.post("/", protect, createReview);
 
-// READ all reviews
+// READ all reviews (public)
 router.get("/", getReviews);
 
-// READ reviews for a particular place
+// READ reviews for a particular place (public)
 router.get("/place/:placeId", getReviewsByPlace);
 
-// UPDATE a review
-router.put("/:id", updateReview);
+// UPDATE a review (protected)
+router.put("/:id", protect, updateReview);
 
-// DELETE a review
-router.delete("/:id", deleteReview);
+// DELETE a review (protected)
+router.delete("/:id", protect, deleteReview);
 
 module.exports = router;

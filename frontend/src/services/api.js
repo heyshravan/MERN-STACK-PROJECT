@@ -1,4 +1,3 @@
-
 const API_BASE_URL = "http://localhost:5000/api";
 
 // ================= AUTH HEADERS =================
@@ -22,6 +21,19 @@ export const getPlaces = async () => {
 
   if (!response.ok) {
     throw new Error(data.message || "Failed to fetch places");
+  }
+
+  return data;
+};
+
+// GET place by ID
+export const getPlaceById = async (id) => {
+  const response = await fetch(`${API_BASE_URL}/places/${id}`);
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(data.message || "Failed to fetch destination details");
   }
 
   return data;
@@ -145,6 +157,19 @@ export const getReviews = async () => {
   return data;
 };
 
+// GET reviews for a destination
+export const getReviewsByPlace = async (placeId) => {
+  const response = await fetch(`${API_BASE_URL}/reviews/place/${placeId}`);
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(data.message || "Failed to fetch destination reviews");
+  }
+
+  return data;
+};
+
 // ADD a review
 export const addReview = async (reviewData) => {
   const response = await fetch(`${API_BASE_URL}/reviews`, {
@@ -157,6 +182,22 @@ export const addReview = async (reviewData) => {
 
   if (!response.ok) {
     throw new Error(data.message || "Failed to add review");
+  }
+
+  return data;
+};
+
+// DELETE a review
+export const deleteReview = async (id) => {
+  const response = await fetch(`${API_BASE_URL}/reviews/${id}`, {
+    method: "DELETE",
+    headers: getAuthHeaders(),
+  });
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(data.message || "Failed to delete review");
   }
 
   return data;
@@ -184,9 +225,6 @@ export const getFavorites = async () => {
 export const addFavorite = async (placeId) => {
   const token = localStorage.getItem("token");
 
-  console.log("Favorite Place ID:", placeId);
-  console.log("Token available:", Boolean(token));
-
   const response = await fetch(`${API_BASE_URL}/favorites`, {
     method: "POST",
     headers: {
@@ -199,8 +237,6 @@ export const addFavorite = async (placeId) => {
   });
 
   const data = await response.json();
-
-  console.log("Favorite API response:", data);
 
   if (!response.ok) {
     throw new Error(data.message || "Unable to add favorite");
@@ -298,7 +334,7 @@ export const deleteTrip = async (id) => {
 
 // ================= HIDDEN GEM APIs =================
 
-// GET all hidden gems
+// GET all approved hidden gems (public)
 export const getHiddenGems = async () => {
   const response = await fetch(`${API_BASE_URL}/hidden-gems`);
 
@@ -306,6 +342,22 @@ export const getHiddenGems = async () => {
 
   if (!response.ok) {
     throw new Error(data.message || "Failed to fetch hidden gems");
+  }
+
+  return data;
+};
+
+// GET current user's submitted hidden gems
+export const getMyHiddenGems = async () => {
+  const response = await fetch(`${API_BASE_URL}/hidden-gems/my-submissions`, {
+    method: "GET",
+    headers: getAuthHeaders(),
+  });
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(data.message || "Failed to fetch your submissions");
   }
 
   return data;

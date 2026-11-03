@@ -1,4 +1,3 @@
-
 const mongoose = require("mongoose");
 
 const hiddenGemSchema = new mongoose.Schema(
@@ -26,6 +25,12 @@ const hiddenGemSchema = new mongoose.Schema(
 
     state: {
       type: String,
+    },
+
+    category: {
+      type: String,
+      enum: ["Nature", "Historical", "Adventure", "Religious", "Beach", "Cultural", "Other"],
+      default: "Nature",
     },
 
     image: {

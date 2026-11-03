@@ -4,22 +4,62 @@ const Review = require("../models/Review");
 const createReview = async (req, res) => {
   try {
     const userId = req.user?.id || req.body.user;
+    const placeId = req.body.place;
+    const { rating, comment } = req.body;
+
     if (!userId) {
+      return res.status(401).json({
+        message: "Please login to write a review.",
+      });
+    }
+
+    if (!placeId) {
       return res.status(400).json({
-        message: "User authentication or user ID is required to post a review.",
+        message: "Destination ID (place) is required.",
+      });
+    }
+
+    const numRating = Number(rating);
+    if (!numRating || numRating < 1 || numRating > 5) {
+      return res.status(400).json({
+        message: "Rating must be an integer between 1 and 5 stars.",
+      });
+    }
+
+    if (!comment || !comment.trim()) {
+      return res.status(400).json({
+        message: "Review comment cannot be empty.",
+      });
+    }
+
+    // Check for duplicate review by same user for same destination
+    const existing = await Review.findOne({ user: userId, place: placeId });
+    if (existing) {
+      return res.status(409).json({
+        message: "You have already reviewed this destination.",
       });
     }
 
     const review = await Review.create({
-      ...req.body,
       user: userId,
+      place: placeId,
+      rating: numRating,
+      comment: comment.trim(),
     });
 
+    const populatedReview = await Review.findById(review._id)
+      .populate("user", "name");
+
     res.status(201).json({
-      message: "Review created successfully",
-      review,
+      message: "Review submitted successfully!",
+      review: populatedReview,
     });
   } catch (error) {
+    if (error.code === 11000) {
+      return res.status(409).json({
+        message: "You have already reviewed this destination.",
+      });
+    }
     res.status(400).json({
       message: error.message,
     });
@@ -31,7 +71,8 @@ const getReviews = async (req, res) => {
   try {
     const reviews = await Review.find()
       .populate("user", "name")
-      .populate("place", "name");
+      .populate("place", "name")
+      .sort({ createdAt: -1 });
 
     res.status(200).json(reviews);
   } catch (error) {
@@ -41,14 +82,14 @@ const getReviews = async (req, res) => {
   }
 };
 
-// READ reviews for one place
+// READ reviews for one destination
 const getReviewsByPlace = async (req, res) => {
   try {
     const reviews = await Review.find({
       place: req.params.placeId,
     })
       .populate("user", "name")
-      .populate("place", "name");
+      .sort({ createdAt: -1 });
 
     res.status(200).json(reviews);
   } catch (error) {
