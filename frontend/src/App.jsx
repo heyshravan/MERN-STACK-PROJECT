@@ -16,6 +16,7 @@ import AI_Assistant from "./pages/AI_Assistant";
 import Trip_Planner from "./pages/Trip_Planner";
 import Register from "./pages/Register";
 import Login from "./pages/Login";
+import Destination_Details from "./pages/Destination_Details";
 
 function App() {
   return (
@@ -36,6 +37,8 @@ function App() {
             <Route path="/trip-planner" element={<Trip_Planner />} />
             <Route path="/register" element={<Register />} />
             <Route path="/login" element={<Login />} />
+            <Route path="/destination/:slug" element={<Destination_Details />} />
+            <Route path="/destination" element={<Destination_Details />} />
           </Routes>
 
           <Footer_com />

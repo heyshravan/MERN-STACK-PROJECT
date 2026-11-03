@@ -87,6 +87,9 @@ function formatDuration(seconds) {
 function Navigate() {
   const [searchParams] = useSearchParams();
   const requestedPlaceId = searchParams.get("destination");
+  const queryLat = parseFloat(searchParams.get("lat"));
+  const queryLng = parseFloat(searchParams.get("lng"));
+  const queryName = searchParams.get("name");
 
   const [places, setPlaces] = useState([]);
   const [loadingPlaces, setLoadingPlaces] = useState(true);
@@ -168,8 +171,16 @@ function Navigate() {
         const list = Array.isArray(data) ? data : [];
         setPlaces(list);
 
-        // If a destination was requested in URL query, select it
-        if (requestedPlaceId && list.length > 0) {
+        // If direct coordinates or destination was requested in URL query, select it
+        if (!isNaN(queryLat) && !isNaN(queryLng)) {
+          selectDestination({
+            _id: "query-dest",
+            name: queryName || "Selected Destination",
+            latitude: queryLat,
+            longitude: queryLng,
+            city: queryName || "",
+          });
+        } else if (requestedPlaceId && list.length > 0) {
           const match = list.find((p) => String(p._id) === String(requestedPlaceId));
           if (match) {
             selectDestination(match);
@@ -183,7 +194,7 @@ function Navigate() {
     };
 
     fetchDestinations();
-  }, [requestedPlaceId]);
+  }, [requestedPlaceId, queryLat, queryLng]);
 
   // Resolve coordinate helper
   const resolveCoordinates = (place) => {

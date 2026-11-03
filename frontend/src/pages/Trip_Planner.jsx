@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { getTrips, createTrip, updateTrip, deleteTrip } from "../services/api";
 import { useAuth } from "../context/AuthContext";
 
@@ -14,6 +14,8 @@ const emptyForm = {
 
 function Trip_Planner() {
   const { user } = useAuth();
+  const [searchParams] = useSearchParams();
+  const prefillDestination = searchParams.get("destination");
 
   const [trips, setTrips] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -48,6 +50,15 @@ function Trip_Planner() {
   useEffect(() => {
     fetchTrips();
   }, [user]);
+
+  useEffect(() => {
+    if (prefillDestination) {
+      setFormData((prev) => ({
+        ...prev,
+        destination: prefillDestination,
+      }));
+    }
+  }, [prefillDestination]);
 
   const handleChange = (e) => {
     setFormData({
