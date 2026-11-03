@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { useEffect, useState, useRef } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import {
   getPlaces,
   createPlace,
@@ -13,6 +13,7 @@ import {
   deleteReview,
 } from "../services/api";
 import { useAuth } from "../context/AuthContext";
+import { useLanguage } from "../context/LanguageContext";
 
 const CATEGORIES = [
   "Historical",
@@ -39,6 +40,16 @@ const emptyForm = {
 
 function Explore() {
   const { user } = useAuth();
+  const navigate = useNavigate();
+
+  const {
+    t,
+    isListening,
+    recognitionError,
+    startVoiceSearch,
+    stopVoiceSearch,
+    isSpeechRecognitionSupported,
+  } = useLanguage();
 
   const [places, setPlaces] = useState([]);
   const [favorites, setFavorites] = useState([]);
@@ -56,6 +67,14 @@ function Explore() {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("All");
   const [sortBy, setSortBy] = useState("newest"); // 'newest', 'name-asc', 'name-desc', 'highest-rated', 'most-reviews'
+
+  // Global Destination Search & Autocomplete State
+  const [searchQuery, setSearchQuery] = useState("");
+  const [autocompleteResults, setAutocompleteResults] = useState([]);
+  const [searchingGlobal, setSearchingGlobal] = useState(false);
+  const [showDropdown, setShowDropdown] = useState(false);
+  const [globalDiscoveryList, setGlobalDiscoveryList] = useState([]);
+  const searchWrapRef = useRef(null);
 
   // Review Modal State
   const [reviewModalPlace, setReviewModalPlace] = useState(null);
@@ -108,6 +127,90 @@ function Explore() {
     };
     loadData();
   }, [user]);
+
+  // ================= GLOBAL SEARCH & AUTOCOMPLETE DEBOUNCE =================
+
+  useEffect(() => {
+    const query = searchQuery.trim();
+    setSearchTerm(query);
+
+    if (query.length < 2) {
+      setAutocompleteResults([]);
+      setGlobalDiscoveryList([]);
+      setShowDropdown(false);
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      try {
+        setSearchingGlobal(true);
+        const res = await fetch(
+          `http://localhost:5000/api/destinations/search?q=${encodeURIComponent(query)}`
+        );
+        if (res.ok) {
+          const list = await res.json();
+          const items = Array.isArray(list) ? list : [];
+          setAutocompleteResults(items);
+          setGlobalDiscoveryList(items.filter((item) => !item.isLocal));
+          setShowDropdown(items.length > 0);
+        }
+      } catch (err) {
+        console.warn("Global autocomplete error:", err);
+      } finally {
+        setSearchingGlobal(false);
+      }
+    }, 280);
+
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  // Click outside to close dropdown
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (searchWrapRef.current && !searchWrapRef.current.contains(e.target)) {
+        setShowDropdown(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  // Voice Search Handler
+  const handleMicClick = () => {
+    if (isListening) {
+      stopVoiceSearch();
+    } else {
+      startVoiceSearch({
+        onResult: (transcript) => {
+          setSearchQuery(transcript);
+          setSearchTerm(transcript);
+        },
+        onError: (err) => {
+          setError(err);
+        },
+      });
+    }
+  };
+
+  // Clear search input
+  const handleClearSearch = () => {
+    setSearchQuery("");
+    setSearchTerm("");
+    setAutocompleteResults([]);
+    setGlobalDiscoveryList([]);
+    setShowDropdown(false);
+  };
+
+  // Select item from Autocomplete
+  const handleSelectAutocomplete = (item) => {
+    setShowDropdown(false);
+    if (item.isLocal) {
+      setSearchQuery(item.name);
+      setSearchTerm(item.name);
+    } else {
+      navigate(`/destination/${item.slug}`);
+    }
+  };
 
   // ================= REVIEWS COMPUTATION =================
 
@@ -349,7 +452,7 @@ function Explore() {
     }
   };
 
-  // ================= SEARCH, FILTER & SORT =================
+  // ================= SEARCH, FILTER & SORT (LOCAL PLACES) =================
 
   const filteredPlaces = places
     .filter((p) => {
@@ -387,32 +490,195 @@ function Explore() {
 
   return (
     <main className="explore-page">
-      <h1>Explore Destinations</h1>
-      <p>Discover historical landmarks, nature retreats, and iconic tourist places.</p>
+      <div className="explore-header-section">
+        <h1>Explore Destinations</h1>
+        <p className="explore-header-tagline">
+          Discover countries, states, cities, monuments, and natural attractions across India and the globe.
+        </p>
+      </div>
 
       {message && <p className="success-message">{message}</p>}
       {error && <p className="error-message">{error}</p>}
+      {recognitionError && <p className="error-message">🎙️ {recognitionError}</p>}
 
-      {/* ================= SEARCH & FILTER CONTROLS ================= */}
-      <section className="explore-controls-card">
-        <div className="explore-search-bar">
-          <input
-            type="text"
-            placeholder="🔍 Search destinations by name, city, state, or country..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
-          {searchTerm && (
+      {/* ================= 1. GLOBAL DESTINATION SEARCH BAR WITH AUTOCOMPLETE & VOICE ================= */}
+      <section className="explore-global-search-section">
+        <div className="global-search-card" ref={searchWrapRef}>
+          <div className="global-search-input-wrap">
+            <span className="search-lead-icon" aria-hidden="true">🔍</span>
+            <input
+              type="text"
+              className="global-search-input"
+              placeholder={t("search_placeholder") || "Search any destination, city, state, country, monument or attraction..."}
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onFocus={() => {
+                if (autocompleteResults.length > 0) setShowDropdown(true);
+              }}
+              aria-label="Search destinations globally"
+            />
+
+            {searchingGlobal && (
+              <span className="search-inline-spinner" title="Searching globally..."></span>
+            )}
+
+            {searchQuery && (
+              <button
+                type="button"
+                className="search-clear-icon-btn"
+                onClick={handleClearSearch}
+                title="Clear Search"
+                aria-label="Clear Search"
+              >
+                ✕
+              </button>
+            )}
+
             <button
               type="button"
-              className="explore-clear-search"
-              onClick={() => setSearchTerm("")}
+              className={`search-mic-action-btn ${isListening ? "listening" : ""}`}
+              onClick={handleMicClick}
+              disabled={!isSpeechRecognitionSupported}
+              title={
+                !isSpeechRecognitionSupported
+                  ? t("not_supported_stt")
+                  : isListening
+                  ? t("stop_listening")
+                  : t("voice_search")
+              }
+              aria-label="Voice Search"
             >
-              ✕ Clear
+              <span>{isListening ? "🔴" : "🎙️"}</span>
+              <span className="mic-label-text">
+                {isListening ? t("listening") : t("voice_search")}
+              </span>
             </button>
-          )}
-        </div>
+          </div>
 
+          {/* Autocomplete Suggestions Dropdown */}
+          {showDropdown && autocompleteResults.length > 0 && (
+            <div className="autocomplete-dropdown">
+              <div className="autocomplete-header">
+                <span>Matching Destinations ({autocompleteResults.length})</span>
+                <small>Select to open travel guide or view records</small>
+              </div>
+              <ul className="autocomplete-list">
+                {autocompleteResults.map((item) => (
+                  <li
+                    key={item.id}
+                    className="autocomplete-item"
+                    onClick={() => handleSelectAutocomplete(item)}
+                  >
+                    <div className="autocomplete-item-left">
+                      <span className="autocomplete-icon-badge" title={item.type}>
+                        {item.icon || (item.isLocal ? "🏛️" : "📍")}
+                      </span>
+                      {item.image && (
+                        <img
+                          src={item.image}
+                          alt={item.name}
+                          className="autocomplete-thumb"
+                          onError={(e) => {
+                            e.target.style.display = "none";
+                          }}
+                        />
+                      )}
+                      <div className="autocomplete-info">
+                        <span className="autocomplete-name">{item.name}</span>
+                        <span className="autocomplete-subtitle">
+                          {item.subtitle || item.description}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="autocomplete-item-right">
+                      <span className={`autocomplete-tag ${item.isLocal ? "local" : "global"}`}>
+                        {item.isLocal ? "ExploreX Record" : item.type}
+                      </span>
+                      <span className="autocomplete-arrow">→</span>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          <div className="search-quick-hints">
+            <span>Try searching:</span>
+            <button type="button" onClick={() => setSearchQuery("Kashmir")}>Kashmir</button>
+            <button type="button" onClick={() => setSearchQuery("Hyderabad")}>Hyderabad</button>
+            <button type="button" onClick={() => setSearchQuery("Taj Mahal")}>Taj Mahal</button>
+            <button type="button" onClick={() => setSearchQuery("Gulmarg")}>Gulmarg</button>
+            <button type="button" onClick={() => setSearchQuery("Eiffel Tower")}>Eiffel Tower</button>
+            <button type="button" onClick={() => setSearchQuery("Switzerland")}>Switzerland</button>
+          </div>
+        </div>
+      </section>
+
+      {/* ================= 2. GLOBAL DISCOVERY RESULTS CARDS ================= */}
+      {globalDiscoveryList.length > 0 && searchQuery.trim() && (
+        <section className="explore-global-discovery-section">
+          <div className="global-discovery-header">
+            <h2>🌐 Global Discovery Results for "{searchQuery}"</h2>
+            <span className="global-discovery-count">
+              Found {globalDiscoveryList.length} global geographic destinations
+            </span>
+          </div>
+
+          <div className="global-discovery-grid">
+            {globalDiscoveryList.map((item) => (
+              <div key={item.id} className="global-discovery-card">
+                {item.image ? (
+                  <div className="global-card-image-wrap">
+                    <img
+                      src={item.image}
+                      alt={item.name}
+                      loading="lazy"
+                      onError={(e) => {
+                        e.target.style.display = "none";
+                      }}
+                    />
+                    <span className="global-card-badge">
+                      {item.icon || "📍"} {item.type}
+                    </span>
+                  </div>
+                ) : (
+                  <div className="global-card-placeholder">
+                    <span className="placeholder-icon">{item.icon || "🌐"}</span>
+                    <span className="global-card-badge">{item.type}</span>
+                  </div>
+                )}
+
+                <div className="global-card-body">
+                  <h3 className="global-card-title">{item.name}</h3>
+                  <p className="global-card-subtitle">{item.subtitle}</p>
+                  <p className="global-card-desc">{item.description}</p>
+
+                  <div className="global-card-actions">
+                    <Link
+                      to={`/destination/${item.slug}`}
+                      className="global-view-guide-btn"
+                    >
+                      🧭 View Complete Travel Guide →
+                    </Link>
+                    {item.coordinates && (
+                      <Link
+                        to={`/navigate?lat=${item.coordinates.lat}&lng=${item.coordinates.lon}&name=${encodeURIComponent(item.name)}`}
+                        className="global-nav-btn"
+                      >
+                        🗺️ Shortest Route
+                      </Link>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* ================= 3. LOCAL DESTINATIONS FILTER & SORT CONTROLS ================= */}
+      <section className="explore-controls-card">
         <div className="explore-filter-row">
           <div className="explore-category-pills">
             <button
@@ -451,7 +717,7 @@ function Explore() {
         </div>
       </section>
 
-      {/* ================= ADD / EDIT DESTINATION FORM ================= */}
+      {/* ================= 4. ADD / EDIT DESTINATION FORM ================= */}
       <section className="add-place-section">
         <h2>{editingId ? "Edit Destination" : "Add a New Destination"}</h2>
 
@@ -477,79 +743,107 @@ function Explore() {
             value={formData.category}
             onChange={handleChange}
           >
-            {CATEGORIES.map((category) => (
-              <option key={category} value={category}>
-                {category}
+            {CATEGORIES.map((cat) => (
+              <option key={cat} value={cat}>
+                {cat}
               </option>
             ))}
           </select>
 
-          {["country", "state", "city", "address", "image"].map((field) => (
-            <input
-              key={field}
-              name={field}
-              placeholder={
-                field === "image"
-                  ? "Image URL (https://...)"
-                  : field.charAt(0).toUpperCase() + field.slice(1)
-              }
-              value={formData[field]}
-              onChange={handleChange}
-              required={field === "country"}
-            />
-          ))}
+          <input
+            name="country"
+            placeholder="Country"
+            value={formData.country}
+            onChange={handleChange}
+          />
 
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", width: "100%" }}>
+          <input
+            name="state"
+            placeholder="State / Province"
+            value={formData.state}
+            onChange={handleChange}
+          />
+
+          <input
+            name="city"
+            placeholder="City"
+            value={formData.city}
+            onChange={handleChange}
+          />
+
+          <input
+            name="address"
+            placeholder="Street Address / Landmark"
+            value={formData.address}
+            onChange={handleChange}
+          />
+
+          <input
+            name="image"
+            placeholder="Image URL (https://...)"
+            value={formData.image}
+            onChange={handleChange}
+          />
+
+          <textarea
+            name="historicalInfo"
+            placeholder="Historical Context or Cultural Background"
+            value={formData.historicalInfo}
+            onChange={handleChange}
+          />
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
             <input
               name="latitude"
               type="number"
               step="any"
-              placeholder="Latitude (e.g. 27.1751, optional)"
+              placeholder="Latitude (e.g. 27.1751)"
               value={formData.latitude}
               onChange={handleChange}
             />
+
             <input
               name="longitude"
               type="number"
               step="any"
-              placeholder="Longitude (e.g. 78.0421, optional)"
+              placeholder="Longitude (e.g. 78.0421)"
               value={formData.longitude}
               onChange={handleChange}
             />
           </div>
 
-          <textarea
-            name="historicalInfo"
-            placeholder="Historical or Cultural Information"
-            value={formData.historicalInfo}
-            onChange={handleChange}
-          />
-
-          <button type="submit">
-            {editingId ? "Update Destination" : "Add Destination"}
-          </button>
-
-          {editingId && (
-            <button type="button" onClick={cancelEdit}>
-              Cancel Editing
+          <div style={{ display: "flex", gap: "10px", marginTop: "10px" }}>
+            <button type="submit" style={{ flex: 1 }}>
+              {editingId ? "Update Destination" : "Add Destination"}
             </button>
-          )}
+
+            {editingId && (
+              <button
+                type="button"
+                onClick={cancelEdit}
+                style={{ background: "#888", color: "white" }}
+              >
+                Cancel
+              </button>
+            )}
+          </div>
         </form>
       </section>
 
-      {/* ================= DESTINATIONS GRID ================= */}
-      <section className="places-section">
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "10px" }}>
+      {/* ================= 5. LOCAL DESTINATIONS GRID ================= */}
+      <section className="places-list-section">
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "15px" }}>
           <h2>
-            Available Destinations ({filteredPlaces.length}
-            {places.length !== filteredPlaces.length ? ` of ${places.length}` : ""})
+            Curated Database Destinations ({filteredPlaces.length})
           </h2>
+
           {(searchTerm || selectedCategory !== "All") && (
             <button
               type="button"
               className="ai-clear-btn"
               style={{ color: "#174c3c", borderColor: "#174c3c" }}
               onClick={() => {
+                setSearchQuery("");
                 setSearchTerm("");
                 setSelectedCategory("All");
               }}
@@ -563,13 +857,14 @@ function Explore() {
           <p>Loading destinations...</p>
         ) : filteredPlaces.length === 0 ? (
           <div className="ai-tool-card" style={{ textAlign: "center", padding: "40px" }}>
-            <h3>No destinations match your criteria</h3>
-            <p>Try clearing your search or picking another category filter.</p>
+            <h3>No local destinations match your criteria</h3>
+            <p>Try clearing your search or checking the Global Discovery results above.</p>
           </div>
         ) : (
           <div className="places-grid">
             {filteredPlaces.map((place) => {
               const { avg, count } = getPlaceRatingStats(place._id);
+              const destinationSlug = place.name.toLowerCase().replace(/[^a-z0-9]+/g, "-");
 
               return (
                 <div className="place-card" key={place._id}>
@@ -620,6 +915,15 @@ function Explore() {
                   <span className="category-tag">{place.category || "Other"}</span>
 
                   <div className="place-actions">
+                    {/* VIEW DETAILS GUIDE BUTTON */}
+                    <Link
+                      to={`/destination/${destinationSlug}`}
+                      className="place-guide-btn"
+                      title="View Complete Travel Guide"
+                    >
+                      🧭 Travel Guide
+                    </Link>
+
                     {/* FAVORITE BUTTON */}
                     <button
                       type="button"
@@ -667,7 +971,7 @@ function Explore() {
         )}
       </section>
 
-      {/* ================= REVIEWS MODAL / DIALOG ================= */}
+      {/* ================= 6. REVIEWS MODAL / DIALOG ================= */}
       {reviewModalPlace && (
         <div className="review-modal-backdrop" onClick={closeReviewModal}>
           <div className="review-modal-content" onClick={(e) => e.stopPropagation()}>

@@ -381,7 +381,7 @@ async function getDestinationDetails(queryOrSlug) {
   // Step 4: Fetch Real Nearby Attractions using Geosearch (radius <= 10000m)
   const attractions = [];
   try {
-    const geoUrl = `https://en.wikipedia.org/w/api.php?action=query&list=geosearch&gscoord=${coordinates.lat}|${coordinates.lon}&gsradius=10000&gslimit=10&format=json`;
+    const geoUrl = `https://en.wikipedia.org/w/api.php?action=query&list=geosearch&gscoord=${coordinates.lat}|${coordinates.lon}&gsradius=10000&gslimit=20&format=json`;
     const geoRes = await fetch(geoUrl, {
       headers: { "User-Agent": "ExploreX-Tourism-Platform/2.0 (explorex@example.com)" },
     });
@@ -390,15 +390,42 @@ async function getDestinationDetails(queryOrSlug) {
       const gData = await geoRes.json();
       const list = gData.query?.geosearch || [];
 
-      // Filter out self and non-tourist / sensitive incident titles
-      const excludedKeywords = ["bombing", "attack", "hospital", "incident", "crash", "murder", "riot", "police", "jail", "prison", "cemetery", "disaster"];
-      const validPoints = list
-        .filter((item) => {
-          const lower = item.title.toLowerCase();
-          if (lower === summary.title.toLowerCase()) return false;
-          return !excludedKeywords.some((kw) => lower.includes(kw));
-        })
-        .slice(0, 6);
+      // Exclude irrelevant buildings, administrative institutions, and unrelated locations
+      const excludedKeywords = [
+        "bombing", "attack", "hospital", "incident", "crash", "murder", "riot", "police",
+        "jail", "prison", "cemetery", "disaster", "tragedy", "constituency", "assembly",
+        "lok sabha", "vidhan sabha", "district", "municipality", "panchayat", "government",
+        "ministry", "court", "department", "secretariat", "office", "corporation",
+        "commission", "medical college", "clinic", "dispensary", "sanatorium", "school",
+        "polytechnic", "institute of", "faculty of", "bank", "mall", "refinery", "warehouse",
+        "factory", "cantonment", "tehsil", "station", "junction", "railway", "depot"
+      ];
+
+      // Tourist attraction priority keywords
+      const touristKeywords = [
+        "temple", "monument", "fort", "palace", "museum", "garden", "park", "lake",
+        "waterfall", "viewpoint", "sanctuary", "reserve", "valley", "church", "cathedral",
+        "mosque", "pagoda", "heritage", "stupa", "bazaar", "hill", "peak", "cave", "tomb",
+        "mausoleum", "memorial", "promenade", "beach", "island", "ruins", "castle", "tower",
+        "shrine", "national park", "wildlife", "art gallery", "observatory"
+      ];
+
+      const filteredList = list.filter((item) => {
+        const lower = item.title.toLowerCase();
+        if (lower === summary.title.toLowerCase()) return false;
+        return !excludedKeywords.some((kw) => lower.includes(kw));
+      });
+
+      // Sort prioritizing genuine tourist landmarks
+      filteredList.sort((a, b) => {
+        const aLower = a.title.toLowerCase();
+        const bLower = b.title.toLowerCase();
+        const aScore = touristKeywords.some((kw) => aLower.includes(kw)) ? 1 : 0;
+        const bScore = touristKeywords.some((kw) => bLower.includes(kw)) ? 1 : 0;
+        return bScore - aScore;
+      });
+
+      const validPoints = filteredList.slice(0, 6);
 
       const poiPromises = validPoints.map(async (poi) => {
         try {
@@ -408,6 +435,18 @@ async function getDestinationDetails(queryOrSlug) {
           );
           if (!pSumRes.ok) return null;
           const pSum = await pSumRes.json();
+
+          // Also check summary description for exclusions
+          const descLower = (pSum.description || "").toLowerCase();
+          if (
+            descLower.includes("hospital") ||
+            descLower.includes("constituency") ||
+            descLower.includes("government agency") ||
+            descLower.includes("administrative") ||
+            descLower.includes("medical school")
+          ) {
+            return null;
+          }
 
           return {
             name: poi.title,
