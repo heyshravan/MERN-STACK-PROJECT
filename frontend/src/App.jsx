@@ -7,6 +7,7 @@ import Footer_com from "./components/Footer_com";
 
 import Home from "./pages/Home";
 import Explore from "./pages/Explore";
+import Favorites from "./pages/Favorites";
 import About from "./pages/About";
 import AI_Assistant from "./pages/AI_Assistant";
 import Trip_Planner from "./pages/Trip_Planner";
@@ -22,6 +23,7 @@ function App() {
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/explore" element={<Explore />} />
+          <Route path="/favorites" element={<Favorites />} />
           <Route path="/about" element={<About />} />
           <Route path="/ai-assistant" element={<AI_Assistant />} />
           <Route path="/trip-planner" element={<Trip_Planner />} />

@@ -1,4 +1,3 @@
-
 const mongoose = require("mongoose");
 
 const favoriteSchema = new mongoose.Schema(
@@ -20,7 +19,7 @@ const favoriteSchema = new mongoose.Schema(
   }
 );
 
-// Prevent the same user from saving the same place twice
+// Prevent the same user from adding the same place twice
 favoriteSchema.index(
   { user: 1, place: 1 },
   { unique: true }

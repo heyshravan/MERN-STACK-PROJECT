@@ -1,3 +1,4 @@
+
 import { useEffect, useState } from "react";
 
 import {
@@ -5,7 +6,12 @@ import {
   createPlace,
   updatePlace,
   deletePlace,
+  getFavorites,
+  addFavorite,
+  removeFavorite,
 } from "../services/api";
+
+import { useAuth } from "../context/AuthContext";
 
 const emptyForm = {
   name: "",
@@ -20,22 +26,52 @@ const emptyForm = {
 };
 
 function Explore() {
+  const { user } = useAuth();
+
   const [places, setPlaces] = useState([]);
-  const [formData, setFormData] = useState(emptyForm);
+  const [favorites, setFavorites] = useState([]);
+  const [formData, setFormData] = useState({ ...emptyForm });
   const [editingId, setEditingId] = useState(null);
+
   const [loading, setLoading] = useState(true);
+  const [favoriteLoading, setFavoriteLoading] = useState(null);
+
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+
+  // ================= FETCH PLACES =================
 
   const fetchPlaces = async () => {
     try {
       setLoading(true);
+      setError("");
+
       const data = await getPlaces();
-      setPlaces(data);
+
+      setPlaces(Array.isArray(data) ? data : []);
     } catch (err) {
-      setError("Unable to load destinations.");
+      console.error("Fetch places error:", err);
+      setError(err.message || "Unable to load destinations.");
     } finally {
       setLoading(false);
+    }
+  };
+
+  // ================= FETCH FAVORITES =================
+
+  const fetchFavorites = async () => {
+    if (!user) {
+      setFavorites([]);
+      return;
+    }
+
+    try {
+      const data = await getFavorites();
+
+      setFavorites(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error("Fetch favorites error:", err);
+      setError(err.message || "Unable to load favorites.");
     }
   };
 
@@ -43,15 +79,39 @@ function Explore() {
     fetchPlaces();
   }, []);
 
-  const handleChange = (e) => {
-    setFormData({
-      ...formData,
-      [e.target.name]: e.target.value,
+  useEffect(() => {
+    fetchFavorites();
+  }, [user]);
+
+  // ================= CHECK FAVORITE =================
+
+  const isFavorite = (placeId) => {
+    return favorites.some((favorite) => {
+      const favoritePlaceId =
+        typeof favorite.place === "object"
+          ? favorite.place?._id
+          : favorite.place;
+
+      return String(favoritePlaceId) === String(placeId);
     });
   };
 
+  // ================= HANDLE FORM INPUT =================
+
+  const handleChange = (e) => {
+    const { name, value } = e.target;
+
+    setFormData((previous) => ({
+      ...previous,
+      [name]: value,
+    }));
+  };
+
+  // ================= ADD / UPDATE PLACE =================
+
   const handleSubmit = async (e) => {
     e.preventDefault();
+
     setMessage("");
     setError("");
 
@@ -64,13 +124,17 @@ function Explore() {
         setMessage("Destination added successfully!");
       }
 
-      setFormData(emptyForm);
+      setFormData({ ...emptyForm });
       setEditingId(null);
+
       await fetchPlaces();
     } catch (err) {
-      setError(err.message || "Operation failed.");
+      console.error("Place save error:", err);
+      setError(err.message || "Unable to save destination.");
     }
   };
+
+  // ================= EDIT PLACE =================
 
   const handleEdit = (place) => {
     setEditingId(place._id);
@@ -78,7 +142,7 @@ function Explore() {
     setFormData({
       name: place.name || "",
       description: place.description || "",
-      category: place.category || "Other",
+      category: place.category || "Historical",
       country: place.country || "",
       state: place.state || "",
       city: place.city || "",
@@ -90,8 +154,22 @@ function Explore() {
     setMessage("");
     setError("");
 
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    window.scrollTo({
+      top: 0,
+      behavior: "smooth",
+    });
   };
+
+  // ================= CANCEL EDIT =================
+
+  const cancelEdit = () => {
+    setEditingId(null);
+    setFormData({ ...emptyForm });
+    setMessage("");
+    setError("");
+  };
+
+  // ================= DELETE PLACE =================
 
   const handleDelete = async (id) => {
     const confirmed = window.confirm(
@@ -105,37 +183,91 @@ function Explore() {
       setError("");
 
       await deletePlace(id);
+
       setMessage("Destination deleted successfully!");
 
       if (editingId === id) {
-        setEditingId(null);
-        setFormData(emptyForm);
+        cancelEdit();
       }
 
       await fetchPlaces();
+      await fetchFavorites();
     } catch (err) {
+      console.error("Delete place error:", err);
       setError(err.message || "Unable to delete destination.");
     }
   };
 
-  const cancelEdit = () => {
-    setEditingId(null);
-    setFormData(emptyForm);
+  // ================= ADD / REMOVE FAVORITE =================
+
+  const handleFavorite = async (placeId) => {
+    if (!user) {
+      setError("Please login to save your favorite destinations.");
+      setMessage("");
+      return;
+    }
+
+    if (favoriteLoading === placeId) return;
+
+    setFavoriteLoading(placeId);
     setMessage("");
     setError("");
+
+    try {
+      const existingFavorite = favorites.find((favorite) => {
+        const favoritePlaceId =
+          typeof favorite.place === "object"
+            ? favorite.place?._id
+            : favorite.place;
+
+        return String(favoritePlaceId) === String(placeId);
+      });
+
+      if (existingFavorite) {
+        await removeFavorite(existingFavorite._id);
+        setMessage("Removed from your favorites successfully!");
+      } else {
+        await addFavorite(placeId);
+        setMessage("Added to your favorites successfully!");
+      }
+
+      // Get updated favorites from backend
+      await fetchFavorites();
+    } catch (err) {
+      console.error("Favorite operation error:", err);
+      setError(err.message || "Unable to update favorites.");
+    } finally {
+      setFavoriteLoading(null);
+    }
   };
+
+  // ================= PAGE UI =================
 
   return (
     <div className="explore-page">
+
       <h1>Explore Destinations</h1>
+
       <p>Discover amazing places around the world.</p>
 
+      {message && (
+        <p className="success-message">{message}</p>
+      )}
+
+      {error && (
+        <p className="error-message">{error}</p>
+      )}
+
+      {/* ADD / EDIT DESTINATION */}
+
       <section className="add-place-section">
+
         <h2>
           {editingId ? "Edit Destination" : "Add a New Destination"}
         </h2>
 
         <form onSubmit={handleSubmit}>
+
           <input
             name="name"
             placeholder="Destination Name"
@@ -171,19 +303,23 @@ function Explore() {
             ))}
           </select>
 
-          {["country", "state", "city", "address", "image"].map(
-            (field) => (
-              <input
-                key={field}
-                name={field}
-                placeholder={
-                  field.charAt(0).toUpperCase() + field.slice(1)
-                }
-                value={formData[field]}
-                onChange={handleChange}
-              />
-            )
-          )}
+          {[
+            "country",
+            "state",
+            "city",
+            "address",
+            "image",
+          ].map((field) => (
+            <input
+              key={field}
+              name={field}
+              placeholder={
+                field.charAt(0).toUpperCase() + field.slice(1)
+              }
+              value={formData[field]}
+              onChange={handleChange}
+            />
+          ))}
 
           <textarea
             name="historicalInfo"
@@ -201,13 +337,15 @@ function Explore() {
               Cancel Editing
             </button>
           )}
+
         </form>
 
-        {message && <p>{message}</p>}
-        {error && <p>{error}</p>}
       </section>
 
+      {/* AVAILABLE DESTINATIONS */}
+
       <section className="places-section">
+
         <h2>Available Destinations</h2>
 
         {loading ? (
@@ -215,18 +353,30 @@ function Explore() {
         ) : places.length === 0 ? (
           <p>No destinations available yet.</p>
         ) : (
+
           <div className="places-grid">
+
             {places.map((place) => (
+
               <div className="place-card" key={place._id}>
+
                 {place.image && (
-                  <img src={place.image} alt={place.name} />
+                  <img
+                    src={place.image}
+                    alt={place.name}
+                  />
                 )}
 
                 <h3>{place.name}</h3>
+
                 <p>{place.description}</p>
 
                 <p>
-                  {[place.city, place.state, place.country]
+                  {[
+                    place.city,
+                    place.state,
+                    place.country,
+                  ]
                     .filter(Boolean)
                     .join(", ")}
                 </p>
@@ -234,19 +384,51 @@ function Explore() {
                 <span>{place.category}</span>
 
                 <div className="place-actions">
-                  <button onClick={() => handleEdit(place)}>
+
+                  {/* FAVORITE BUTTON */}
+
+                  <button
+                    type="button"
+                    onClick={() => handleFavorite(place._id)}
+                    disabled={favoriteLoading === place._id}
+                  >
+                    {favoriteLoading === place._id
+                      ? "Please wait..."
+                      : isFavorite(place._id)
+                      ? "❤️ Remove Favorite"
+                      : "🤍 Add to Favorites"}
+                  </button>
+
+                  {/* EDIT BUTTON */}
+
+                  <button
+                    type="button"
+                    onClick={() => handleEdit(place)}
+                  >
                     Edit
                   </button>
 
-                  <button onClick={() => handleDelete(place._id)}>
+                  {/* DELETE BUTTON */}
+
+                  <button
+                    type="button"
+                    onClick={() => handleDelete(place._id)}
+                  >
                     Delete
                   </button>
+
                 </div>
+
               </div>
+
             ))}
+
           </div>
+
         )}
+
       </section>
+
     </div>
   );
 }

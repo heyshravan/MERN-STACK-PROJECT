@@ -20,6 +20,7 @@ function Header_com() {
       <nav className="nav-links">
         <Link to="/">Home</Link>
         <Link to="/explore">Explore</Link>
+        <Link to="/favorites">Favorites</Link>
         <Link to="/about">About</Link>
         <Link to="/ai-assistant">AI Assistant</Link>
         <Link to="/trip-planner">Trip Planner</Link>
@@ -43,7 +44,6 @@ function Header_com() {
         ) : (
           <>
             <Link to="/login">Login</Link>
-
             <Link to="/register" className="register-btn">
               Register
             </Link>
