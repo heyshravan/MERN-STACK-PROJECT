@@ -105,7 +105,7 @@ const updateReview = async (req, res) => {
     const review = await Review.findByIdAndUpdate(
       req.params.id,
       req.body,
-      { new: true, runValidators: true }
+      { returnDocument: 'after', runValidators: true }
     );
 
     if (!review) {

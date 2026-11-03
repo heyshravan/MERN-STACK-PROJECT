@@ -55,7 +55,7 @@ const updatePlace = async (req, res) => {
     const place = await Place.findByIdAndUpdate(
       req.params.id,
       req.body,
-      { new: true, runValidators: true }
+      { returnDocument: 'after', runValidators: true }
     );
 
     if (!place) {

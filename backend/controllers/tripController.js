@@ -66,7 +66,7 @@ const updateTrip = async (req, res) => {
           status: req.body.status,
         },
       },
-      { new: true, runValidators: true }
+      { returnDocument: 'after', runValidators: true }
     );
 
     if (!trip) {
