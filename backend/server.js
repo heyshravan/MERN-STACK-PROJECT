@@ -10,6 +10,7 @@ const reviewRoutes = require("./routes/reviewRoutes");
 const favoriteRoutes = require("./routes/favoriteRoutes");
 const tripRoutes = require("./routes/tripRoutes");
 const hiddenGemRoutes = require("./routes/hiddenGemRoutes");
+const destinationRoutes = require("./routes/destinationRoutes");
 const authRoutes = require("./routes/authRoutes");
 const aiRoutes = require("./routes/aiRoutes");
 
@@ -27,6 +28,7 @@ app.use("/api/reviews", reviewRoutes);
 app.use("/api/favorites", favoriteRoutes);
 app.use("/api/trips", tripRoutes);
 app.use("/api/hidden-gems", hiddenGemRoutes);
+app.use("/api/destinations", destinationRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/ai", aiRoutes);
 
