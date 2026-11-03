@@ -34,6 +34,7 @@ Modern travelers often struggle with fragmented tourism resources: guidebooks ar
 4. **Interactive Reviews & 5-Star Ratings**: Community feedback system enabling real travelers to review destinations with anti-duplicate safeguards.
 5. **Smart Trip Planner**: User-specific itinerary manager with date validation, budget tracking, and interest filtering.
 6. **Favorites Collection**: Quick bookmarking system to keep must-visit destinations readily available.
+7. **Interactive Shortest Route Navigator & Ride Booking**: Real-time Leaflet + OpenStreetMap engine calculating the shortest driving route via OSRM, complete with distance metrics, estimated travel duration, and direct Uber & Ola external ride-booking integration.
 
 ---
 

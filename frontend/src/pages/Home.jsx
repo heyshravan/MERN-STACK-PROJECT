@@ -60,6 +60,18 @@ function Home() {
           </div>
 
           <div className="home-feature-card">
+            <div className="home-feature-icon">🧭</div>
+            <h3>Shortest Route Navigator</h3>
+            <p>
+              Interactive Leaflet maps calculate actual shortest-distance road routes,
+              display real travel times, and link directly to Uber and Ola ride services.
+            </p>
+            <Link to="/navigate" className="home-feature-link">
+              Navigate Routes →
+            </Link>
+          </div>
+
+          <div className="home-feature-card">
             <div className="home-feature-icon">🤖</div>
             <h3>AI Tourist Assistant</h3>
             <p>

@@ -19,6 +19,7 @@ function Header_com() {
       <nav className="nav-links">
         <Link to="/">Home</Link>
         <Link to="/explore">Explore</Link>
+        <Link to="/navigate">Navigate</Link>
         <Link to="/favorites">Favorites</Link>
         <Link to="/hidden-gems">Hidden Gems</Link>
         <Link to="/ai-assistant">AI Assistant</Link>

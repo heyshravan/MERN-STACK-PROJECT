@@ -33,6 +33,8 @@ const emptyForm = {
   address: "",
   image: "",
   historicalInfo: "",
+  latitude: "",
+  longitude: "",
 };
 
 function Explore() {
@@ -156,11 +158,24 @@ function Explore() {
     setError("");
 
     try {
+      const payload = { ...formData };
+      if (payload.latitude === "" || payload.latitude === undefined || payload.latitude === null) {
+        delete payload.latitude;
+      } else {
+        payload.latitude = Number(payload.latitude);
+      }
+
+      if (payload.longitude === "" || payload.longitude === undefined || payload.longitude === null) {
+        delete payload.longitude;
+      } else {
+        payload.longitude = Number(payload.longitude);
+      }
+
       if (editingId) {
-        await updatePlace(editingId, formData);
+        await updatePlace(editingId, payload);
         setMessage("Destination updated successfully!");
       } else {
-        await createPlace(formData);
+        await createPlace(payload);
         setMessage("Destination added successfully!");
       }
 
@@ -187,6 +202,8 @@ function Explore() {
       address: place.address || "",
       image: place.image || "",
       historicalInfo: place.historicalInfo || "",
+      latitude: place.latitude != null ? place.latitude : "",
+      longitude: place.longitude != null ? place.longitude : "",
     });
 
     setMessage("");
@@ -482,6 +499,25 @@ function Explore() {
             />
           ))}
 
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", width: "100%" }}>
+            <input
+              name="latitude"
+              type="number"
+              step="any"
+              placeholder="Latitude (e.g. 27.1751, optional)"
+              value={formData.latitude}
+              onChange={handleChange}
+            />
+            <input
+              name="longitude"
+              type="number"
+              step="any"
+              placeholder="Longitude (e.g. 78.0421, optional)"
+              value={formData.longitude}
+              onChange={handleChange}
+            />
+          </div>
+
           <textarea
             name="historicalInfo"
             placeholder="Historical or Cultural Information"
@@ -596,6 +632,14 @@ function Explore() {
                         ? "❤️ Remove Favorite"
                         : "🤍 Add to Favorites"}
                     </button>
+
+                    {/* NAVIGATE BUTTON */}
+                    <Link
+                      to={`/navigate?destination=${place._id}`}
+                      className="place-navigate-btn"
+                    >
+                      🗺️ Navigate
+                    </Link>
 
                     {/* REVIEWS BUTTON */}
                     <button
