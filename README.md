@@ -35,6 +35,7 @@ Modern travelers often struggle with fragmented tourism resources: guidebooks ar
 5. **Smart Trip Planner**: User-specific itinerary manager with date validation, budget tracking, and interest filtering.
 6. **Favorites Collection**: Quick bookmarking system to keep must-visit destinations readily available.
 7. **Interactive Shortest Route Navigator & Ride Booking**: Real-time Leaflet + OpenStreetMap engine calculating the shortest driving route via OSRM, complete with distance metrics, estimated travel duration, and direct Uber & Ola external ride-booking integration.
+8. **Interactive 3D Heritage & Photo-to-3D Reconstruction**: Full WebGL 3D exploration of India's iconic monuments (Taj Mahal, Charminar, Red Fort, Hawa Mahal, India Gate, Mysore Palace, Konark Sun Temple) with interactive architectural hotspots and day/sunset/night lighting, plus a community-driven multi-photo photogrammetry pipeline that transforms uploaded photographs of hidden gems into interactive 3D digital models.
 
 ---
 

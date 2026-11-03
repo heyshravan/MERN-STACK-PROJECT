@@ -13,6 +13,10 @@ dist/
 dist-ssr/
 *.local
 
+# User Uploads & Generated 3D Models
+backend/uploads/
+!backend/uploads/**/.gitkeep
+
 # Logs
 npm-debug.log*
 yarn-debug.log*

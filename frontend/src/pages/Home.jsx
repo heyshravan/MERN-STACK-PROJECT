@@ -16,7 +16,10 @@ function Home() {
           </p>
 
           <div className="home-hero-actions">
-            <Link to="/explore" className="home-btn primary">
+            <Link to="/explore-3d" className="home-btn primary" style={{ background: "#b47a45" }}>
+              🏛️ Interactive 3D Tour
+            </Link>
+            <Link to="/explore" className="home-btn secondary">
               🗺️ Explore Destinations
             </Link>
             <Link to="/ai-assistant" className="home-btn secondary">
@@ -47,6 +50,17 @@ function Home() {
         </p>
 
         <div className="home-features-grid">
+          <div className="home-feature-card">
+            <div className="home-feature-icon">🕹️</div>
+            <h3>Interactive 3D Heritage</h3>
+            <p>
+              Inspect 3D architectural models of the Taj Mahal, Charminar, Red Fort, and more with interactive educational hotspots and day/sunset/night lighting.
+            </p>
+            <Link to="/explore-3d" className="home-feature-link">
+              Explore 3D Models →
+            </Link>
+          </div>
+
           <div className="home-feature-card">
             <div className="home-feature-icon">🏛️</div>
             <h3>Destination Explorer</h3>

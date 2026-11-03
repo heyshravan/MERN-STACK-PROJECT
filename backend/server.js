@@ -2,6 +2,7 @@ require("dotenv").config();
 
 const express = require("express");
 const cors = require("cors");
+const path = require("path");
 const connectDB = require("./config/db");
 const placeRoutes = require("./routes/placeRoutes");
 const userRoutes = require("./routes/userRoutes");
@@ -16,6 +17,10 @@ const app = express();
 
 app.use(cors());
 app.use(express.json());
+
+// Serve uploaded photographs and 3D GLB models statically
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+
 app.use("/api/users", userRoutes);
 app.use("/api/places", placeRoutes);
 app.use("/api/reviews", reviewRoutes);

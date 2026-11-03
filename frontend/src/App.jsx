@@ -6,6 +6,7 @@ import Footer_com from "./components/Footer_com";
 
 import Home from "./pages/Home";
 import Explore from "./pages/Explore";
+import Explore_3D from "./pages/Explore_3D";
 import Navigate from "./pages/Navigate";
 import Favorites from "./pages/Favorites";
 import HiddenGems from "./pages/Hidden_Gems";
@@ -24,6 +25,7 @@ function App() {
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/explore" element={<Explore />} />
+          <Route path="/explore-3d" element={<Explore_3D />} />
           <Route path="/navigate" element={<Navigate />} />
           <Route path="/favorites" element={<Favorites />} />
           <Route path="/hidden-gems" element={<HiddenGems />} />

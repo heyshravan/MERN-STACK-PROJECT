@@ -413,3 +413,92 @@ export const chatWithAI = async (message, history = []) => {
 
   return data;
 };
+
+// ================= 3D HIDDEN GEM & PHOTO-TO-3D APIs =================
+
+// SUBMIT a hidden gem with multiple photographs (multipart/form-data)
+export const submitHiddenGemWithPhotos = async (formData) => {
+  const token = localStorage.getItem("token");
+  const headers = {};
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+  // Notice: Do NOT set Content-Type header when sending FormData;
+  // the browser will automatically set it along with the multipart boundary.
+
+  const response = await fetch(`${API_BASE_URL}/hidden-gems`, {
+    method: "POST",
+    headers,
+    body: formData,
+  });
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(data.message || "Failed to submit hidden gem with photographs");
+  }
+
+  return data;
+};
+
+// GET 3D processing status of a hidden gem
+export const getHiddenGemStatus = async (gemId) => {
+  const response = await fetch(`${API_BASE_URL}/hidden-gems/${gemId}/status`);
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(data.message || "Failed to fetch 3D reconstruction status");
+  }
+
+  return data;
+};
+
+// RETRY failed 3D reconstruction
+export const retryHiddenGemReconstruction = async (gemId) => {
+  const response = await fetch(`${API_BASE_URL}/hidden-gems/${gemId}/retry`, {
+    method: "POST",
+    headers: getAuthHeaders(),
+  });
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(data.message || "Failed to retry 3D reconstruction");
+  }
+
+  return data;
+};
+
+// ADMIN: Get all submissions (all statuses)
+export const getAllHiddenGemsAdmin = async () => {
+  const response = await fetch(`${API_BASE_URL}/hidden-gems/all`, {
+    method: "GET",
+    headers: getAuthHeaders(),
+  });
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(data.message || "Admin authorization required to fetch all gems");
+  }
+
+  return data;
+};
+
+// ADMIN: Approve or reject a submission and 3D model
+export const updateHiddenGemStatusAdmin = async (gemId, statusData) => {
+  const response = await fetch(`${API_BASE_URL}/hidden-gems/${gemId}/status`, {
+    method: "PATCH",
+    headers: getAuthHeaders(),
+    body: JSON.stringify(statusData),
+  });
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(data.message || "Failed to update review status");
+  }
+
+  return data;
+};
