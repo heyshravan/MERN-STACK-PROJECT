@@ -118,6 +118,12 @@ function Destination_Details() {
   const [translating, setTranslating] = useState(false);
   const [translationFallback, setTranslationFallback] = useState(false);
 
+  // Multi-Attraction Selection for Shortest Route Navigation
+  const [selectedAttractions, setSelectedAttractions] = useState([]);
+
+  // Interactive Itinerary Generator state
+  const [itineraryDays, setItineraryDays] = useState(3);
+
   // Lightbox state for photo gallery
   const [lightboxIndex, setLightboxIndex] = useState(null);
 
@@ -326,6 +332,144 @@ function Destination_Details() {
       }
     };
   }, [destination]);
+
+  // Multi-Attraction Selection Handlers for Shortest Route
+  const toggleAttractionSelection = (item) => {
+    setSelectedAttractions((prev) => {
+      const exists = prev.some((a) => a.name === item.name);
+      if (exists) {
+        return prev.filter((a) => a.name !== item.name);
+      } else {
+        return [...prev, item];
+      }
+    });
+  };
+
+  const selectAllAttractions = () => {
+    if (!destination?.attractions) return;
+    setSelectedAttractions([...destination.attractions]);
+  };
+
+  const clearSelectedAttractions = () => {
+    setSelectedAttractions([]);
+  };
+
+  const getMultiStopRouteUrl = () => {
+    if (!destination) return "/navigate";
+    const stops = [
+      {
+        name: destination.title,
+        lat: destination.coordinates?.lat,
+        lng: destination.coordinates?.lon,
+        isHub: true,
+      },
+      ...selectedAttractions.map((a) => ({
+        name: a.name,
+        lat: a.coordinates?.lat,
+        lng: a.coordinates?.lon,
+      })),
+    ];
+    return `/navigate?destination=${encodeURIComponent(destination.title)}&stops=${encodeURIComponent(JSON.stringify(stops))}`;
+  };
+
+  // Structured Multi-Day Itinerary Generator
+  const getGeneratedItinerary = (daysCount) => {
+    if (!destination) return [];
+    const attractions = destination.attractions || [];
+    const thingsGroups = destination.thingsToDo || [];
+    const allActivities = thingsGroups.flatMap((g) => g.items || []);
+
+    const days = [];
+    for (let d = 1; d <= daysCount; d++) {
+      let title = "";
+      const activities = [];
+
+      if (d === 1) {
+        title = `Iconic ${destination.title} Landmarks & Orientation`;
+        activities.push(`Morning arrival and discovery of central ${destination.title}`);
+        if (attractions[0]) {
+          activities.push(`Tour of ${attractions[0].name} (approx. ${attractions[0].distanceKm} km away)`);
+        }
+        if (allActivities[0]) activities.push(allActivities[0]);
+        activities.push(`Dinner at a renowned local restaurant sampling traditional specialties`);
+      } else if (d === 2) {
+        title = `Cultural Heritage, Historic Trails & Bazaars`;
+        if (attractions[1]) {
+          activities.push(`Morning excursion to ${attractions[1].name}`);
+        }
+        if (attractions[2]) {
+          activities.push(`Afternoon exploration of ${attractions[2].name}`);
+        }
+        if (allActivities[1]) activities.push(allActivities[1]);
+        if (allActivities[2]) activities.push(allActivities[2]);
+        activities.push(`Evening heritage walk and traditional handicrafts shopping`);
+      } else if (d === 3) {
+        title = `Panoramic Viewpoints, Leisure & Culinary Tasting`;
+        if (attractions[3]) {
+          activities.push(`Scenic sightseeing around ${attractions[3].name}`);
+        }
+        if (allActivities[3]) activities.push(allActivities[3]);
+        activities.push(`Photography session capturing authentic landscapes and architecture`);
+        activities.push(`Sunset viewpoint relaxation and tea/culinary tasting experience`);
+      } else if (d === 4) {
+        title = `Architecture, Local Communities & Nature`;
+        if (attractions[4]) {
+          activities.push(`Visit to ${attractions[4].name}`);
+        }
+        activities.push(`Interactive artisan workshop or museum gallery exploration`);
+        activities.push(`Guided local street food trail and market visit`);
+      } else {
+        title = `Regional Day Trips & Relaxed Departure`;
+        activities.push(`Scenic day trip to outlying countryside or adjacent scenic preserves`);
+        activities.push(`Last-minute souvenir acquisition and leisurely cafe stop`);
+        activities.push(`Departure preparations and transit to transport terminal`);
+      }
+
+      days.push({
+        day: d,
+        title,
+        activities,
+      });
+    }
+    return days;
+  };
+
+  const getTripPlannerTransferUrl = () => {
+    if (!destination) return "/trip-planner";
+    const daysPlan = getGeneratedItinerary(itineraryDays);
+    const itineraryData = daysPlan.map((d) => ({
+      day: d.day,
+      activities: d.activities,
+    }));
+
+    // Estimate budget based on standard tier
+    let dailyBudget = 3500;
+    if (destination.budget?.tiers?.[1]?.dailyEstimateINR) {
+      const match = destination.budget.tiers[1].dailyEstimateINR.match(/\d[0-9,]*/);
+      if (match) {
+        dailyBudget = parseInt(match[0].replace(/,/g, ""), 10) || 3500;
+      }
+    }
+    const totalBudget = dailyBudget * itineraryDays;
+
+    const interests = destination.thingsToDo?.map((g) => g.category).join(", ") || "Heritage, Sightseeing, Food";
+
+    // Include top waypoints for navigation linking
+    const stops = [
+      {
+        name: destination.title,
+        lat: destination.coordinates?.lat,
+        lng: destination.coordinates?.lon,
+      },
+      ...(destination.attractions || []).slice(0, 4).map((a) => ({
+        name: a.name,
+        lat: a.coordinates?.lat,
+        lng: a.coordinates?.lon,
+      })),
+    ];
+
+    return `/trip-planner?destination=${encodeURIComponent(destination.title)}&duration=${itineraryDays}&budget=${totalBudget}&interests=${encodeURIComponent(interests)}&itinerary=${encodeURIComponent(JSON.stringify(itineraryData))}&stops=${encodeURIComponent(JSON.stringify(stops))}`;
+  };
 
   // Audio Guide Handler
   const handleToggleAudio = () => {
@@ -809,20 +953,59 @@ function Destination_Details() {
         {/* 5. TOP NEARBY ATTRACTIONS */}
         <section className="dest-section dest-attractions-section">
           <div className="dest-section-header">
-            <h2>📍 {t("attractions_heading")}</h2>
+            <h2>🧭 {t("attractions_heading")}</h2>
             <span className="dest-section-sub">
               Notable points of interest within 10 km radius via geosearch
             </span>
           </div>
 
+          {Array.isArray(destination.attractions) && destination.attractions.length > 0 && (
+            <div className="dest-route-planner-bar">
+              <div className="route-bar-info">
+                <span className="route-bar-icon">🗺️</span>
+                <div>
+                  <strong>Multi-Stop Route Planner ({selectedAttractions.length} / {destination.attractions.length} Selected)</strong>
+                  <p>Pick landmarks below to calculate the optimal shortest road route connecting them.</p>
+                </div>
+              </div>
+
+              <div className="route-bar-buttons">
+                {selectedAttractions.length < destination.attractions.length ? (
+                  <button
+                    type="button"
+                    className="route-bar-btn outline"
+                    onClick={selectAllAttractions}
+                  >
+                    Select All ({destination.attractions.length})
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className="route-bar-btn outline"
+                    onClick={clearSelectedAttractions}
+                  >
+                    Clear Selection
+                  </button>
+                )}
+
+                {selectedAttractions.length > 0 && (
+                  <Link to={getMultiStopRouteUrl()} className="route-bar-btn primary">
+                    🧭 Calculate Route ({selectedAttractions.length + 1} Points) →
+                  </Link>
+                )}
+              </div>
+            </div>
+          )}
+
           {Array.isArray(destination.attractions) && destination.attractions.length > 0 ? (
             <div className="dest-attractions-grid">
               {destination.attractions.map((item, idx) => {
-                const navUrl = `/navigate?lat=${item.coordinates?.lat}&lng=${item.coordinates?.lon}&name=${encodeURIComponent(item.name)}`;
+                const isSelected = selectedAttractions.some((a) => a.name === item.name);
+                const navUrl = `/navigate?lat=${item.coordinates?.lat}&lng=${item.coordinates?.lon}&name=${encodeURIComponent(item.name)}&destination=${encodeURIComponent(destination.title)}`;
                 const googleMapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(item.name + " " + destination.title)}`;
 
                 return (
-                  <article key={idx} className="dest-attraction-card">
+                  <article key={idx} className={`dest-attraction-card ${isSelected ? "selected-card" : ""}`}>
                     {item.image && (
                       <div className="attraction-thumb-wrap">
                         <img
@@ -836,6 +1019,11 @@ function Destination_Details() {
                         <span className="attraction-dist-badge">
                           ~{item.distanceKm} km away
                         </span>
+                        {isSelected && (
+                          <span className="attraction-selected-badge">
+                            ✓ In Route
+                          </span>
+                        )}
                       </div>
                     )}
 
@@ -849,6 +1037,13 @@ function Destination_Details() {
                       </div>
 
                       <div className="attraction-actions">
+                        <button
+                          type="button"
+                          className={`attraction-route-toggle-btn ${isSelected ? "active" : ""}`}
+                          onClick={() => toggleAttractionSelection(item)}
+                        >
+                          {isSelected ? "✓ In Route" : "+ Add to Route"}
+                        </button>
                         <Link to={navUrl} className="attraction-nav-btn">
                           🧭 {t("navigate")}
                         </Link>
@@ -901,6 +1096,54 @@ function Destination_Details() {
             </div>
           </section>
         )}
+
+        {/* 6B. STRUCTURED ITINERARY & TRIP PLANNER CROSS-LINKING */}
+        <section className="dest-section dest-itinerary-section">
+          <div className="dest-section-header">
+            <h2>📅 Day-by-Day Travel Itinerary</h2>
+            <span className="dest-section-sub">
+              Pre-structured sightseeing schedule ready for 1-click transfer into your ExploreX Trip Planner
+            </span>
+          </div>
+
+          <div className="itinerary-controls-bar">
+            <div className="itinerary-duration-tabs">
+              {[1, 2, 3, 5].map((d) => (
+                <button
+                  key={d}
+                  type="button"
+                  className={`duration-tab-btn ${itineraryDays === d ? "active" : ""}`}
+                  onClick={() => setItineraryDays(d)}
+                >
+                  {d} {d === 1 ? "Day Express" : d === 2 ? "Days Weekend" : d === 3 ? "Days Explorer" : "Days Grand"}
+                </button>
+              ))}
+            </div>
+
+            <Link to={getTripPlannerTransferUrl()} className="itinerary-transfer-cta-btn">
+              ✈️ Transfer {itineraryDays}-Day Itinerary to Trip Planner →
+            </Link>
+          </div>
+
+          <div className="itinerary-days-grid">
+            {getGeneratedItinerary(itineraryDays).map((dayPlan) => (
+              <div key={dayPlan.day} className="itinerary-day-card">
+                <div className="day-card-header">
+                  <span className="day-badge">Day {dayPlan.day}</span>
+                  <h4>{dayPlan.title}</h4>
+                </div>
+                <ul className="day-activities-list">
+                  {dayPlan.activities.map((act, actIdx) => (
+                    <li key={actIdx}>
+                      <span className="act-bullet">📍</span>
+                      <span>{act}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+        </section>
 
         {/* 7. TRAVEL ESSENTIALS & LOGISTICS */}
         {destination.travelInfo && (
@@ -1212,16 +1455,20 @@ function Destination_Details() {
 
           <div className="dest-map-footer">
             <Link
-              to={`/navigate?lat=${destination.coordinates?.lat}&lng=${destination.coordinates?.lon}&name=${encodeURIComponent(destination.title)}`}
+              to={
+                selectedAttractions.length > 0
+                  ? getMultiStopRouteUrl()
+                  : `/navigate?lat=${destination.coordinates?.lat}&lng=${destination.coordinates?.lon}&name=${encodeURIComponent(destination.title)}`
+              }
               className="dest-btn-primary"
             >
-              🧭 Open in ExploreX Shortest Route Navigator
+              🧭 {selectedAttractions.length > 0 ? `Calculate Route (${selectedAttractions.length + 1} Points)` : "Open in ExploreX Shortest Route Navigator"}
             </Link>
             <Link
-              to={`/trip-planner?destination=${encodeURIComponent(destination.title)}`}
+              to={getTripPlannerTransferUrl()}
               className="dest-btn-secondary"
             >
-              ✈️ Plan Itinerary for {destination.title}
+              ✈️ Transfer {itineraryDays}-Day Itinerary to Trip Planner
             </Link>
           </div>
         </section>

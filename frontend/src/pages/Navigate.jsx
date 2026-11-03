@@ -12,7 +12,7 @@ L.Icon.Default.mergeOptions({
   shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
 });
 
-// Custom styled map pins for Start, Destination, and Landmarks
+// Custom styled map pins for Start, Waypoints, Destination, and Landmarks
 const createPinIcon = (color, label, symbol) => {
   return L.divIcon({
     className: "custom-map-marker",
@@ -64,6 +64,9 @@ const CITY_COORDS = {
   udaipur: { lat: 24.5854, lng: 73.7125 },
   rishikesh: { lat: 30.0869, lng: 78.2676 },
   darjeeling: { lat: 27.041, lng: 88.2663 },
+  srinagar: { lat: 34.0837, lng: 74.7973 },
+  kashmir: { lat: 34.0837, lng: 74.7973 },
+  gulmarg: { lat: 34.0484, lng: 74.3805 },
   leh: { lat: 34.1526, lng: 77.5771 },
   ladakh: { lat: 34.1526, lng: 77.5771 },
   munnar: { lat: 10.0889, lng: 77.0595 },
@@ -73,6 +76,7 @@ const CITY_COORDS = {
   tokyo: { lat: 35.6762, lng: 139.6503 },
   paris: { lat: 48.8566, lng: 2.3522 },
   london: { lat: 51.5074, lng: -0.1278 },
+  switzerland: { lat: 46.8182, lng: 8.2275 },
 };
 
 function formatDuration(seconds) {
@@ -84,19 +88,40 @@ function formatDuration(seconds) {
   return `${mins} min`;
 }
 
+function haversineDistance(lat1, lon1, lat2, lon2) {
+  const R = 6371; // Earth radius in km
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+
 function Navigate() {
   const [searchParams] = useSearchParams();
   const requestedPlaceId = searchParams.get("destination");
   const queryLat = parseFloat(searchParams.get("lat"));
   const queryLng = parseFloat(searchParams.get("lng"));
   const queryName = searchParams.get("name");
+  const stopsParam = searchParams.get("stops");
 
   const [places, setPlaces] = useState([]);
   const [loadingPlaces, setLoadingPlaces] = useState(true);
 
-  // Selected points
+  // Multi-Stop Waypoints list [{ id, name, lat, lng, isHub }]
+  const [waypoints, setWaypoints] = useState([]);
+
+  // Fallback 2-point state
   const [startPoint, setStartPoint] = useState(null); // { lat, lng, name, isCurrentLocation }
   const [destinationPoint, setDestinationPoint] = useState(null); // { lat, lng, name, placeObj }
+
+  // Routing Strategy: "shortest" (distance/TSP), "fastest" (time), "fixed" (sequential)
+  const [routeStrategy, setRouteStrategy] = useState("shortest");
 
   // Geolocation state
   const [locating, setLocating] = useState(false);
@@ -104,7 +129,7 @@ function Navigate() {
 
   // Routing state
   const [routing, setRouting] = useState(false);
-  const [routeInfo, setRouteInfo] = useState(null); // { shortest, fastest, summary }
+  const [routeInfo, setRouteInfo] = useState(null);
   const [routeError, setRouteError] = useState("");
 
   // Ride booking modal / panel state
@@ -114,6 +139,7 @@ function Navigate() {
   const mapContainerRef = useRef(null);
   const mapInstanceRef = useRef(null);
   const markersLayerRef = useRef(null);
+  const waypointMarkersLayerRef = useRef(null);
   const routeLayerRef = useRef(null);
   const startMarkerRef = useRef(null);
   const destMarkerRef = useRef(null);
@@ -135,18 +161,27 @@ function Navigate() {
         maxZoom: 19,
       }).addTo(map);
 
-      // Layer groups for markers and polyline
+      // Layer groups for markers, waypoints, and polyline
       markersLayerRef.current = L.layerGroup().addTo(map);
+      waypointMarkersLayerRef.current = L.layerGroup().addTo(map);
       routeLayerRef.current = L.layerGroup().addTo(map);
 
-      // Allow user to click anywhere on map to set starting point
+      // Click on map to add waypoint or set start point
       map.on("click", (e) => {
         const { lat, lng } = e.latlng;
-        setStartPoint({
-          lat,
-          lng,
-          name: `Map Point (${lat.toFixed(4)}, ${lng.toFixed(4)})`,
-          isCurrentLocation: false,
+        const name = `Map Point (${lat.toFixed(4)}, ${lng.toFixed(4)})`;
+
+        setWaypoints((prev) => {
+          if (prev.length > 0) {
+            return [
+              ...prev,
+              { id: `stop-${Date.now()}-${Math.random()}`, name, lat, lng },
+            ];
+          } else {
+            return [
+              { id: `stop-start-${Date.now()}`, name: `Start (${lat.toFixed(4)}, ${lng.toFixed(4)})`, lat, lng },
+            ];
+          }
         });
       });
 
@@ -154,7 +189,6 @@ function Navigate() {
     }
 
     return () => {
-      // Map cleanup on unmount
       if (mapInstanceRef.current) {
         mapInstanceRef.current.remove();
         mapInstanceRef.current = null;
@@ -162,7 +196,7 @@ function Navigate() {
     };
   }, []);
 
-  // Fetch Destinations
+  // Fetch ExploreX Places for catalog selection
   useEffect(() => {
     const fetchDestinations = async () => {
       try {
@@ -171,19 +205,22 @@ function Navigate() {
         const list = Array.isArray(data) ? data : [];
         setPlaces(list);
 
-        // If direct coordinates or destination was requested in URL query, select it
-        if (!isNaN(queryLat) && !isNaN(queryLng)) {
-          selectDestination({
-            _id: "query-dest",
-            name: queryName || "Selected Destination",
-            latitude: queryLat,
-            longitude: queryLng,
-            city: queryName || "",
-          });
-        } else if (requestedPlaceId && list.length > 0) {
-          const match = list.find((p) => String(p._id) === String(requestedPlaceId));
-          if (match) {
-            selectDestination(match);
+        // If direct coordinates or single destination requested in URL query (without stops)
+        if (!stopsParam) {
+          if (!isNaN(queryLat) && !isNaN(queryLng)) {
+            const dest = {
+              _id: "query-dest",
+              name: queryName || "Selected Destination",
+              latitude: queryLat,
+              longitude: queryLng,
+              city: queryName || "",
+            };
+            selectDestination(dest);
+          } else if (requestedPlaceId && list.length > 0) {
+            const match = list.find((p) => String(p._id) === String(requestedPlaceId));
+            if (match) {
+              selectDestination(match);
+            }
           }
         }
       } catch (err) {
@@ -194,24 +231,83 @@ function Navigate() {
     };
 
     fetchDestinations();
-  }, [requestedPlaceId, queryLat, queryLng]);
+  }, [requestedPlaceId, queryLat, queryLng, stopsParam]);
+
+  // Parse multi-stops from query parameter
+  useEffect(() => {
+    if (stopsParam) {
+      try {
+        const parsed = JSON.parse(stopsParam);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const validStops = parsed
+            .filter(
+              (s) =>
+                s &&
+                typeof s.lat === "number" &&
+                typeof s.lng === "number" &&
+                isFinite(s.lat) &&
+                isFinite(s.lng) &&
+                Math.abs(s.lat) <= 90 &&
+                Math.abs(s.lng) <= 180
+            )
+            .map((s, idx) => ({
+              id: `stop-${idx}-${Date.now()}`,
+              name: s.name || `Stop ${idx + 1}`,
+              lat: s.lat,
+              lng: s.lng,
+              isHub: !!s.isHub,
+            }));
+
+          // Deduplicate consecutive identical points
+          const deduped = validStops.filter((s, idx, arr) => {
+            if (idx === 0) return true;
+            const prev = arr[idx - 1];
+            return (
+              Math.abs(s.lat - prev.lat) > 0.0001 ||
+              Math.abs(s.lng - prev.lng) > 0.0001
+            );
+          });
+
+          if (deduped.length > 0) {
+            setWaypoints(deduped);
+            setStartPoint({
+              lat: deduped[0].lat,
+              lng: deduped[0].lng,
+              name: deduped[0].name,
+            });
+            if (deduped.length > 1) {
+              setDestinationPoint({
+                lat: deduped[deduped.length - 1].lat,
+                lng: deduped[deduped.length - 1].lng,
+                name: deduped[deduped.length - 1].name,
+              });
+            }
+          }
+        }
+      } catch (err) {
+        console.warn("Failed to parse stops query parameter:", err);
+      }
+    }
+  }, [stopsParam]);
 
   // Resolve coordinate helper
   const resolveCoordinates = (place) => {
-    if (place.latitude != null && place.longitude != null && !isNaN(place.latitude) && !isNaN(place.longitude)) {
+    if (
+      place.latitude != null &&
+      place.longitude != null &&
+      !isNaN(place.latitude) &&
+      !isNaN(place.longitude)
+    ) {
       return { lat: Number(place.latitude), lng: Number(place.longitude) };
     }
-    // Direct lookup by city
     const cityKey = place.city?.toLowerCase().trim();
     if (cityKey && CITY_COORDS[cityKey]) {
       return CITY_COORDS[cityKey];
     }
-    // Direct lookup by name
     const nameKey = place.name?.toLowerCase().trim();
     if (nameKey && CITY_COORDS[nameKey]) {
       return CITY_COORDS[nameKey];
     }
-    // Fuzzy search through city/name in CITY_COORDS keys
     const combined = `${place.name || ""} ${place.city || ""} ${place.state || ""}`.toLowerCase();
     for (const [key, coords] of Object.entries(CITY_COORDS)) {
       if (combined.includes(key)) {
@@ -233,7 +329,7 @@ function Navigate() {
       const coords = resolveCoordinates(place);
       if (!coords) return;
 
-      const markerIcon = createPinIcon("#174c3c", place.name, "🏛️");
+      const markerIcon = createPinIcon("#174c3c", place.name, "📍");
       const marker = L.marker([coords.lat, coords.lng], { icon: markerIcon });
 
       const popupHtml = `
@@ -244,9 +340,19 @@ function Navigate() {
               : ""
           }
           <strong style="font-size:14px; color:#174c3c;">${place.name}</strong>
-          <p style="margin:4px 0; font-size:12px; color:#555;">${place.description?.slice(0, 80)}...</p>
+          <p style="margin:4px 0; font-size:12px; color:#555;">${place.description?.slice(0, 80) || ""}...</p>
           <p style="margin:2px 0; font-size:11px; color:#777;">📍 ${[place.city, place.country].filter(Boolean).join(", ")}</p>
-          <div style="margin-top:8px;">
+          <div style="margin-top:8px; display:flex; flex-direction:column; gap:4px;">
+            <button id="add-stop-${place._id}" style="
+              width: 100%;
+              background: #174c3c;
+              color: white;
+              border: none;
+              padding: 6px 10px;
+              border-radius: 4px;
+              font-size: 11px;
+              cursor: pointer;
+            ">+ Add as Route Stop</button>
             <button id="select-dest-${place._id}" style="
               width: 100%;
               background: #b47a45;
@@ -254,7 +360,7 @@ function Navigate() {
               border: none;
               padding: 6px 10px;
               border-radius: 4px;
-              font-size: 12px;
+              font-size: 11px;
               cursor: pointer;
             ">Set as Destination 🏁</button>
           </div>
@@ -263,11 +369,17 @@ function Navigate() {
 
       marker.bindPopup(popupHtml);
 
-      // Handle popup button click
       marker.on("popupopen", () => {
-        const btn = document.getElementById(`select-dest-${place._id}`);
-        if (btn) {
-          btn.onclick = () => {
+        const addBtn = document.getElementById(`add-stop-${place._id}`);
+        if (addBtn) {
+          addBtn.onclick = () => {
+            addWaypointFromPlace(place);
+            marker.closePopup();
+          };
+        }
+        const selectBtn = document.getElementById(`select-dest-${place._id}`);
+        if (selectBtn) {
+          selectBtn.onclick = () => {
             selectDestination(place);
             marker.closePopup();
           };
@@ -278,24 +390,76 @@ function Navigate() {
     });
   }, [places]);
 
-  // Update Start & Destination Markers on Map
+  // Update Waypoint Markers on Map
   useEffect(() => {
     const map = mapInstanceRef.current;
-    if (!map) return;
+    const layer = waypointMarkersLayerRef.current;
+    if (!map || !layer) return;
 
-    // Start marker
+    layer.clearLayers();
+
+    if (waypoints.length > 0) {
+      waypoints.forEach((wp, idx) => {
+        const isFirst = idx === 0;
+        const isLast = idx === waypoints.length - 1;
+        const color = isFirst ? "#27ae60" : isLast ? "#c0392b" : "#b47a45";
+        const symbol = isFirst ? "🚩" : isLast ? "🏁" : `${idx + 1}`;
+
+        const icon = createPinIcon(color, `${idx + 1}. ${wp.name}`, symbol);
+        const m = L.marker([wp.lat, wp.lng], { icon });
+
+        m.bindPopup(`
+          <div style="font-family: inherit; min-width: 160px;">
+            <span style="font-size:11px; font-weight:bold; color:${color};">Stop #${idx + 1} ${isFirst ? "(Start)" : isLast ? "(Endpoint)" : ""}</span>
+            <h4 style="margin:4px 0; color:#174c3c;">${wp.name}</h4>
+            <p style="margin:2px 0; font-size:11px; color:#666;">Coords: ${wp.lat.toFixed(4)}, ${wp.lng.toFixed(4)}</p>
+            <button id="del-wp-${idx}" style="
+              margin-top: 6px;
+              background: #e74c3c;
+              color: white;
+              border: none;
+              padding: 4px 8px;
+              border-radius: 4px;
+              font-size: 11px;
+              cursor: pointer;
+            ">Remove This Stop</button>
+          </div>
+        `);
+
+        m.on("popupopen", () => {
+          const delBtn = document.getElementById(`del-wp-${idx}`);
+          if (delBtn) {
+            delBtn.onclick = () => {
+              removeWaypoint(idx);
+              m.closePopup();
+            };
+          }
+        });
+
+        layer.addLayer(m);
+      });
+
+      const bounds = L.latLngBounds(waypoints.map((w) => [w.lat, w.lng]));
+      map.fitBounds(bounds, { padding: [60, 60], maxZoom: 14 });
+    }
+  }, [waypoints]);
+
+  // Fallback 2-point markers
+  useEffect(() => {
+    const map = mapInstanceRef.current;
+    if (!map || waypoints.length > 0) return;
+
     if (startMarkerRef.current) {
       map.removeLayer(startMarkerRef.current);
       startMarkerRef.current = null;
     }
     if (startPoint) {
-      const icon = createPinIcon("#27ae60", startPoint.name || "Start", "📍");
+      const icon = createPinIcon("#27ae60", startPoint.name || "Start", "🚩");
       const m = L.marker([startPoint.lat, startPoint.lng], { icon }).addTo(map);
       m.bindPopup(`<strong>Starting Point:</strong><br/>${startPoint.name}`);
       startMarkerRef.current = m;
     }
 
-    // Destination marker
     if (destMarkerRef.current) {
       map.removeLayer(destMarkerRef.current);
       destMarkerRef.current = null;
@@ -306,27 +470,107 @@ function Navigate() {
       m.bindPopup(`<strong>Destination:</strong><br/>${destinationPoint.name}`);
       destMarkerRef.current = m;
     }
-  }, [startPoint, destinationPoint]);
+  }, [startPoint, destinationPoint, waypoints]);
 
-  // Select a destination
+  // Waypoint Management functions
+  const moveWaypointUp = (index) => {
+    if (index <= 0) return;
+    setWaypoints((prev) => {
+      const copy = [...prev];
+      const temp = copy[index - 1];
+      copy[index - 1] = copy[index];
+      copy[index] = temp;
+      return copy;
+    });
+    setRouteInfo(null);
+  };
+
+  const moveWaypointDown = (index) => {
+    if (index >= waypoints.length - 1) return;
+    setWaypoints((prev) => {
+      const copy = [...prev];
+      const temp = copy[index + 1];
+      copy[index + 1] = copy[index];
+      copy[index] = temp;
+      return copy;
+    });
+    setRouteInfo(null);
+  };
+
+  const removeWaypoint = (index) => {
+    setWaypoints((prev) => prev.filter((_, i) => i !== index));
+    setRouteInfo(null);
+  };
+
+  const clearAllWaypoints = () => {
+    setWaypoints([]);
+    setStartPoint(null);
+    setDestinationPoint(null);
+    setRouteInfo(null);
+    setRouteError("");
+    if (routeLayerRef.current) {
+      routeLayerRef.current.clearLayers();
+    }
+  };
+
+  const addWaypointFromPlace = (place) => {
+    const coords = resolveCoordinates(place);
+    if (!coords) {
+      setRouteError(`Geographic coordinates could not be resolved for ${place.name}.`);
+      return;
+    }
+    const newStop = {
+      id: `stop-${Date.now()}-${Math.random()}`,
+      name: place.name,
+      lat: coords.lat,
+      lng: coords.lng,
+    };
+    setWaypoints((prev) => [...prev, newStop]);
+    setRouteInfo(null);
+    setRouteError("");
+  };
+
+  // Select a destination (legacy 2-point mode or append to waypoints)
   const selectDestination = (place) => {
     let coords = resolveCoordinates(place);
     if (!coords) {
       setRouteError(
-        `Geographic coordinates for "${place.name}" could not be resolved. You can add coordinates in Explore or click a point on the map.`
+        `Geographic coordinates for "${place.name}" could not be resolved. You can click a point on the map.`
       );
-      // Fallback center for viewing
       coords = DEFAULT_COORDS;
     } else {
       setRouteError("");
     }
 
-    setDestinationPoint({
+    const newDest = {
       lat: coords.lat,
       lng: coords.lng,
       name: place.name,
       placeObj: place,
-    });
+    };
+
+    setDestinationPoint(newDest);
+
+    // If waypoints is empty, seed start and destination
+    if (waypoints.length === 0) {
+      if (startPoint) {
+        setWaypoints([
+          { id: `stop-start`, name: startPoint.name, lat: startPoint.lat, lng: startPoint.lng },
+          { id: `stop-dest`, name: newDest.name, lat: newDest.lat, lng: newDest.lng },
+        ]);
+      } else {
+        setWaypoints([
+          { id: `stop-dest`, name: newDest.name, lat: newDest.lat, lng: newDest.lng },
+        ]);
+      }
+    } else {
+      // Append destination as final waypoint
+      setWaypoints((prev) => [
+        ...prev,
+        { id: `stop-${Date.now()}`, name: newDest.name, lat: newDest.lat, lng: newDest.lng },
+      ]);
+    }
+
     setRouteInfo(null);
 
     if (mapInstanceRef.current) {
@@ -346,12 +590,28 @@ function Navigate() {
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         const { latitude, longitude } = pos.coords;
-        setStartPoint({
+        const currentLoc = {
+          id: `stop-current-${Date.now()}`,
           lat: latitude,
           lng: longitude,
           name: "My Current Location",
           isCurrentLocation: true,
+        };
+
+        setStartPoint(currentLoc);
+
+        // Prepend or set as first waypoint
+        setWaypoints((prev) => {
+          if (prev.length > 0) {
+            // Replace first if it was an earlier current location, or prepend
+            if (prev[0].isCurrentLocation) {
+              return [currentLoc, ...prev.slice(1)];
+            }
+            return [currentLoc, ...prev];
+          }
+          return [currentLoc];
         });
+
         setLocating(false);
 
         if (mapInstanceRef.current) {
@@ -373,18 +633,44 @@ function Navigate() {
     );
   };
 
-  // Calculate Shortest Route using OSRM
+  // Calculate Practical Route using OSRM with True Shortest Distance Optimization
   const handleCalculateRoute = async () => {
     setRouteError("");
     setRouteInfo(null);
 
-    if (!startPoint) {
-      setRouteError("Please set a starting point (use current location or click on map).");
-      return;
+    // Determine effective points
+    let points = [];
+    if (waypoints.length >= 2) {
+      points = [...waypoints];
+    } else if (startPoint && destinationPoint) {
+      points = [
+        { name: startPoint.name || "Start", lat: startPoint.lat, lng: startPoint.lng },
+        { name: destinationPoint.name || "Destination", lat: destinationPoint.lat, lng: destinationPoint.lng },
+      ];
+    } else {
+      if (!startPoint && waypoints.length === 0) {
+        setRouteError("Please set a starting point (use current location, select a city, or click on map).");
+        return;
+      }
+      if (!destinationPoint && waypoints.length < 2) {
+        setRouteError("Please add at least 2 waypoints or select a destination.");
+        return;
+      }
     }
 
-    if (!destinationPoint) {
-      setRouteError("Please select a destination from the list or map.");
+    const validPoints = points.filter(
+      (p) =>
+        p &&
+        typeof p.lat === "number" &&
+        typeof p.lng === "number" &&
+        isFinite(p.lat) &&
+        isFinite(p.lng) &&
+        Math.abs(p.lat) <= 90 &&
+        Math.abs(p.lng) <= 180
+    );
+
+    if (validPoints.length < 2) {
+      setRouteError("At least two valid geographic coordinates are required to calculate a route.");
       return;
     }
 
@@ -396,115 +682,187 @@ function Navigate() {
     setRouting(true);
 
     try {
-      const startLng = startPoint.lng;
-      const startLat = startPoint.lat;
-      const destLng = destinationPoint.lng;
-      const destLat = destinationPoint.lat;
+      const coordsStr = validPoints.map((p) => `${p.lng},${p.lat}`).join(";");
 
-      const osrmUrl = `https://router.project-osrm.org/route/v1/driving/${startLng},${startLat};${destLng},${destLat}?overview=full&geometries=geojson&alternatives=true&steps=true`;
+      // CASE A: 3+ Waypoints with Shortest Distance (TSP Optimization)
+      if (validPoints.length >= 3 && routeStrategy === "shortest") {
+        const tripUrl = `https://router.project-osrm.org/trip/v1/driving/${coordsStr}?roundtrip=false&source=first&overview=full&geometries=geojson&steps=true`;
+        const response = await fetch(tripUrl);
+        const data = await response.json();
 
-      const response = await fetch(osrmUrl);
-      const data = await response.json();
+        if (!response.ok || data.code !== "Ok" || !data.trips || data.trips.length === 0) {
+          throw new Error(
+            data.message ||
+              "No drivable road route found between all selected waypoints. They may be across disconnected terrain."
+          );
+        }
 
-      if (!response.ok || data.code !== "Ok" || !data.routes || data.routes.length === 0) {
-        throw new Error(
-          data.message ||
-            "No drivable route found between these locations. They may be across disconnected terrain."
+        const bestTrip = data.trips[0];
+        const distKm = (bestTrip.distance / 1000).toFixed(2);
+        const timeFormatted = formatDuration(bestTrip.duration);
+
+        // Reconstruct visiting sequence from TSP solution
+        const optimizedSequence = [];
+        data.waypoints.forEach((wp, origIdx) => {
+          optimizedSequence[wp.waypoint_index] = {
+            order: wp.waypoint_index + 1,
+            name: validPoints[origIdx].name,
+            lat: validPoints[origIdx].lat,
+            lng: validPoints[origIdx].lng,
+            origIndex: origIdx,
+          };
+        });
+
+        setRouteInfo({
+          isMultiStopTSP: true,
+          strategy: "shortest",
+          strategyLabel: "Shortest Distance (TSP Multi-Stop Optimized)",
+          distanceKm: distKm,
+          durationFormatted: timeFormatted,
+          distanceMeters: bestTrip.distance,
+          durationSeconds: bestTrip.duration,
+          geometry: bestTrip.geometry,
+          sequence: optimizedSequence,
+          waypointsCount: validPoints.length,
+        });
+
+        // Draw GeoJSON polyline
+        const geoJsonLayer = L.geoJSON(
+          { type: "Feature", properties: {}, geometry: bestTrip.geometry },
+          {
+            style: {
+              color: "#174c3c",
+              weight: 6,
+              opacity: 0.88,
+              lineJoin: "round",
+            },
+          }
         );
-      }
+        routeLayer.addLayer(geoJsonLayer);
+        map.fitBounds(geoJsonLayer.getBounds(), { padding: [50, 50], maxZoom: 15 });
+      } else {
+        // CASE B: 2-Point Routing or Sequential Routing
+        const osrmUrl = `https://router.project-osrm.org/route/v1/driving/${coordsStr}?overview=full&geometries=geojson&alternatives=true&steps=true`;
+        const response = await fetch(osrmUrl);
+        const data = await response.json();
 
-      // Distinguish the shortest-distance route from the fastest route
-      const routes = data.routes;
-
-      // Find route with minimum distance
-      let shortest = routes[0];
-      let fastest = routes[0];
-
-      for (const r of routes) {
-        if (r.distance < shortest.distance) {
-          shortest = r;
+        if (!response.ok || data.code !== "Ok" || !data.routes || data.routes.length === 0) {
+          throw new Error(
+            data.message ||
+              "No drivable road route found between these locations. They may be across disconnected terrain."
+          );
         }
-        if (r.duration < fastest.duration) {
-          fastest = r;
+
+        const routes = data.routes;
+        let shortest = routes[0];
+        let fastest = routes[0];
+
+        for (const r of routes) {
+          if (r.distance < shortest.distance) shortest = r;
+          if (r.duration < fastest.duration) fastest = r;
         }
+
+        // Select chosen route according to routeStrategy
+        const chosen = routeStrategy === "fastest" ? fastest : shortest;
+        const chosenDistKm = (chosen.distance / 1000).toFixed(2);
+        const chosenTime = formatDuration(chosen.duration);
+
+        const shortestDistKm = (shortest.distance / 1000).toFixed(2);
+        const shortestTime = formatDuration(shortest.duration);
+        const fastestDistKm = (fastest.distance / 1000).toFixed(2);
+        const fastestTime = formatDuration(fastest.duration);
+
+        const hasAlternative = routes.length > 1 && shortest !== fastest;
+
+        setRouteInfo({
+          isMultiStopTSP: false,
+          strategy: routeStrategy,
+          strategyLabel:
+            routeStrategy === "fastest"
+              ? "Fastest Travel Time Route"
+              : routeStrategy === "fixed"
+              ? "Sequential Route (Fixed User Order)"
+              : "Shortest Distance Route",
+          distanceKm: chosenDistKm,
+          durationFormatted: chosenTime,
+          distanceMeters: chosen.distance,
+          durationSeconds: chosen.duration,
+          geometry: chosen.geometry,
+          hasAlternative,
+          shortest: { distanceKm: shortestDistKm, durationFormatted: shortestTime },
+          fastest: { distanceKm: fastestDistKm, durationFormatted: fastestTime },
+          waypointsCount: validPoints.length,
+          sequence: validPoints.map((p, i) => ({
+            order: i + 1,
+            name: p.name,
+            lat: p.lat,
+            lng: p.lng,
+          })),
+        });
+
+        // Draw polyline
+        const geoJsonLayer = L.geoJSON(
+          { type: "Feature", properties: {}, geometry: chosen.geometry },
+          {
+            style: {
+              color: "#174c3c",
+              weight: 6,
+              opacity: 0.88,
+              lineJoin: "round",
+            },
+          }
+        );
+        routeLayer.addLayer(geoJsonLayer);
+        map.fitBounds(geoJsonLayer.getBounds(), { padding: [50, 50], maxZoom: 15 });
       }
-
-      const shortestDistKm = (shortest.distance / 1000).toFixed(2);
-      const shortestTime = formatDuration(shortest.duration);
-      const fastestDistKm = (fastest.distance / 1000).toFixed(2);
-      const fastestTime = formatDuration(fastest.duration);
-
-      setRouteInfo({
-        shortest: {
-          distanceKm: shortestDistKm,
-          durationFormatted: shortestTime,
-          distanceMeters: shortest.distance,
-          durationSeconds: shortest.duration,
-          geometry: shortest.geometry,
-        },
-        fastest: {
-          distanceKm: fastestDistKm,
-          durationFormatted: fastestTime,
-          distanceMeters: fastest.distance,
-          durationSeconds: fastest.duration,
-          geometry: fastest.geometry,
-        },
-        hasAlternative: routes.length > 1 && shortest !== fastest,
-      });
-
-      // Draw the shortest route on map
-      const routeGeoJson = {
-        type: "Feature",
-        properties: {},
-        geometry: shortest.geometry,
-      };
-
-      const geoJsonLayer = L.geoJSON(routeGeoJson, {
-        style: {
-          color: "#174c3c",
-          weight: 6,
-          opacity: 0.85,
-          lineJoin: "round",
-        },
-      });
-
-      routeLayer.addLayer(geoJsonLayer);
-
-      // Fit map view to show entire route with padding
-      map.fitBounds(geoJsonLayer.getBounds(), {
-        padding: [50, 50],
-        maxZoom: 15,
-      });
     } catch (err) {
       console.error("OSRM Route calculation error:", err);
+      let straightDist = 0;
+      for (let i = 0; i < validPoints.length - 1; i++) {
+        straightDist += haversineDistance(
+          validPoints[i].lat,
+          validPoints[i].lng,
+          validPoints[i + 1].lat,
+          validPoints[i + 1].lng
+        );
+      }
       setRouteError(
-        err.message ||
-          "Unable to compute route. The routing service may be temporarily unavailable."
+        `${err.message || "Unable to compute route."} (Straight-line distance: ~${straightDist.toFixed(1)} km). You can also open the directions in Google Maps below.`
       );
     } finally {
       setRouting(false);
     }
   };
 
-  // Generate Google Maps Directions link
+  // Generate Google Maps Directions URL (multi-stop capable)
   const getGoogleMapsUrl = () => {
-    if (!startPoint || !destinationPoint) return "#";
-    return `https://www.google.com/maps/dir/?api=1&origin=${startPoint.lat},${startPoint.lng}&destination=${destinationPoint.lat},${destinationPoint.lng}&travelmode=driving`;
+    const points =
+      waypoints.length >= 2
+        ? waypoints
+        : [startPoint, destinationPoint].filter(Boolean);
+
+    if (points.length < 2) return "#";
+    const path = points.map((p) => `${p.lat},${p.lng}`).join("/");
+    return `https://www.google.com/maps/dir/${path}`;
   };
 
   // Generate External Ride Booking Deep Links
   const getUberUrl = () => {
-    if (!destinationPoint) return "https://m.uber.com/";
+    const pickup =
+      waypoints.length > 0 ? waypoints[0] : startPoint;
+    const dropoff =
+      waypoints.length > 0 ? waypoints[waypoints.length - 1] : destinationPoint;
 
-    const pickupLat = startPoint ? startPoint.lat : "";
-    const pickupLng = startPoint ? startPoint.lng : "";
-    const pickupName = startPoint ? startPoint.name : "My Location";
-    const destLat = destinationPoint.lat;
-    const destLng = destinationPoint.lng;
-    const destName = destinationPoint.name;
+    if (!dropoff) return "https://m.uber.com/";
 
-    // Official Uber Universal Link
-    if (startPoint) {
+    const pickupLat = pickup ? pickup.lat : "";
+    const pickupLng = pickup ? pickup.lng : "";
+    const pickupName = pickup ? pickup.name : "My Location";
+    const destLat = dropoff.lat;
+    const destLng = dropoff.lng;
+    const destName = dropoff.name;
+
+    if (pickup) {
       return `https://m.uber.com/ul/?action=setPickup&pickup[latitude]=${pickupLat}&pickup[longitude]=${pickupLng}&pickup[nickname]=${encodeURIComponent(
         pickupName
       )}&dropoff[latitude]=${destLat}&dropoff[longitude]=${destLng}&dropoff[nickname]=${encodeURIComponent(
@@ -517,16 +875,20 @@ function Navigate() {
   };
 
   const getOlaUrl = () => {
-    if (!destinationPoint) return "https://book.olacabs.com/";
+    const pickup =
+      waypoints.length > 0 ? waypoints[0] : startPoint;
+    const dropoff =
+      waypoints.length > 0 ? waypoints[waypoints.length - 1] : destinationPoint;
 
-    const pickupLat = startPoint ? startPoint.lat : "";
-    const pickupLng = startPoint ? startPoint.lng : "";
-    const destLat = destinationPoint.lat;
-    const destLng = destinationPoint.lng;
-    const destName = destinationPoint.name;
+    if (!dropoff) return "https://book.olacabs.com/";
 
-    // Official Ola Cabs Universal Web & Deep Link Portal
-    if (startPoint) {
+    const pickupLat = pickup ? pickup.lat : "";
+    const pickupLng = pickup ? pickup.lng : "";
+    const destLat = dropoff.lat;
+    const destLng = dropoff.lng;
+    const destName = dropoff.name;
+
+    if (pickup) {
       return `https://book.olacabs.com/?lat=${pickupLat}&lng=${pickupLng}&drop_lat=${destLat}&drop_lng=${destLng}&d_name=${encodeURIComponent(
         destName
       )}`;
@@ -539,90 +901,157 @@ function Navigate() {
   return (
     <main className="navigate-page">
       <div className="navigate-header">
-        <span className="ai-header-badge">🗺️ Real-Time Navigation</span>
+        <span className="ai-header-badge">🧭 Real-Time Navigation</span>
         <h1>Interactive Route Navigator</h1>
         <p>
-          Calculate the shortest route to any ExploreX destination, preview turn-by-turn distance,
-          and seamlessly request rides via official mobility providers.
+          Calculate practical shortest routes, optimize multi-stop attraction visits, and preview turn-by-turn driving distances across ExploreX destinations.
         </p>
       </div>
 
       <div className="navigate-layout">
         {/* ================= LEFT CONTROLS PANEL ================= */}
         <aside className="navigate-sidebar">
-          {/* 1. Starting Point Selection */}
-          <div className="navigate-card">
-            <h3>1. Starting Point</h3>
+          {/* 1. Multi-Stop Route Stops / Waypoints */}
+          <div className="navigate-card waypoint-manager-card">
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+              <h3 style={{ margin: 0 }}>📍 Route Waypoints ({waypoints.length})</h3>
+              {waypoints.length > 0 && (
+                <button
+                  type="button"
+                  className="clear-route-link-btn"
+                  onClick={clearAllWaypoints}
+                  title="Clear all waypoints"
+                >
+                  Clear All
+                </button>
+              )}
+            </div>
+
             <p className="navigate-instruction">
-              Use your device GPS or click anywhere on the map to set a custom pickup spot.
+              Set your pickup, reorder intermediate stops, or click on the map to add custom pins.
             </p>
 
+            {/* Current GPS location button */}
             <button
               type="button"
               className="navigate-btn location-btn"
               onClick={handleUseCurrentLocation}
               disabled={locating}
             >
-              {locating ? "Acquiring GPS Signal..." : "📍 Use My Current Location"}
+              {locating ? "Acquiring GPS Signal..." : "📍 Use My Current Location as Start"}
             </button>
 
             {geoError && <p className="error-message" style={{ marginTop: "8px" }}>{geoError}</p>}
 
-            {startPoint && (
-              <div className="point-badge start">
-                <span>📍 <strong>Start:</strong> {startPoint.name}</span>
-                <button
-                  type="button"
-                  className="clear-point-btn"
-                  onClick={() => setStartPoint(null)}
-                  title="Clear start point"
-                >
-                  ✕
-                </button>
+            {/* List of active waypoints */}
+            {waypoints.length > 0 ? (
+              <div className="waypoints-list">
+                {waypoints.map((wp, idx) => {
+                  const isFirst = idx === 0;
+                  const isLast = idx === waypoints.length - 1;
+
+                  return (
+                    <div
+                      key={wp.id || idx}
+                      className={`waypoint-item-row ${isFirst ? "start" : isLast ? "end" : "stop"}`}
+                    >
+                      <div className="waypoint-badge-index">
+                        {isFirst ? "🚩 1" : isLast ? `🏁 ${idx + 1}` : `${idx + 1}`}
+                      </div>
+
+                      <div className="waypoint-info">
+                        <strong className="waypoint-title">{wp.name}</strong>
+                        <span className="waypoint-coords">
+                          {wp.lat.toFixed(4)}, {wp.lng.toFixed(4)}
+                        </span>
+                      </div>
+
+                      <div className="waypoint-controls">
+                        <button
+                          type="button"
+                          className="wp-reorder-btn"
+                          disabled={isFirst}
+                          onClick={() => moveWaypointUp(idx)}
+                          title="Move earlier"
+                        >
+                          ▲
+                        </button>
+                        <button
+                          type="button"
+                          className="wp-reorder-btn"
+                          disabled={isLast}
+                          onClick={() => moveWaypointDown(idx)}
+                          title="Move later"
+                        >
+                          ▼
+                        </button>
+                        <button
+                          type="button"
+                          className="wp-remove-btn"
+                          onClick={() => removeWaypoint(idx)}
+                          title="Remove stop"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="empty-waypoints-hint">
+                <span>No waypoints selected. Pick a destination below or click anywhere on the map to place pins.</span>
               </div>
             )}
 
-            {/* Quick city presets */}
+            {/* Quick city selector to set start or stop */}
             <div style={{ marginTop: "12px" }}>
               <label style={{ fontSize: "12px", color: "#666", fontWeight: "bold" }}>
-                Or pick a starting city:
+                Or add city hub as waypoint:
               </label>
               <select
                 className="navigate-select"
                 onChange={(e) => {
                   const val = e.target.value;
                   if (val && CITY_COORDS[val]) {
-                    setStartPoint({
-                      lat: CITY_COORDS[val].lat,
-                      lng: CITY_COORDS[val].lng,
-                      name: val.charAt(0).toUpperCase() + val.slice(1),
-                      isCurrentLocation: false,
-                    });
+                    const cityName = val.charAt(0).toUpperCase() + val.slice(1);
+                    setWaypoints((prev) => [
+                      ...prev,
+                      {
+                        id: `city-${val}-${Date.now()}`,
+                        name: cityName,
+                        lat: CITY_COORDS[val].lat,
+                        lng: CITY_COORDS[val].lng,
+                      },
+                    ]);
+                    e.target.value = "";
                   }
                 }}
                 defaultValue=""
               >
                 <option value="" disabled>
-                  -- Select a city --
+                  -- Select a city to add --
                 </option>
                 <option value="delhi">Delhi</option>
+                <option value="agra">Agra</option>
+                <option value="jaipur">Jaipur</option>
+                <option value="hyderabad">Hyderabad</option>
+                <option value="srinagar">Srinagar (Kashmir)</option>
+                <option value="gulmarg">Gulmarg</option>
                 <option value="mumbai">Mumbai</option>
                 <option value="bengaluru">Bengaluru</option>
                 <option value="kolkata">Kolkata</option>
-                <option value="jaipur">Jaipur</option>
-                <option value="agra">Agra</option>
-                <option value="manali">Manali</option>
-                <option value="shimla">Shimla</option>
                 <option value="goa">Goa</option>
+                <option value="manali">Manali</option>
               </select>
             </div>
           </div>
 
-          {/* 2. Destination Selection */}
+          {/* 2. Destination Catalog Selection */}
           <div className="navigate-card">
-            <h3>2. Destination Endpoint</h3>
+            <h3>2. ExploreX Destination Catalog</h3>
             <p className="navigate-instruction">
-              Select a tourist destination from the list or click any marker on the map.
+              Select any tourist destination to append it to your route itinerary.
             </p>
 
             {loadingPlaces ? (
@@ -630,14 +1059,17 @@ function Navigate() {
             ) : (
               <select
                 className="navigate-select"
-                value={destinationPoint?.placeObj?._id || ""}
+                defaultValue=""
                 onChange={(e) => {
                   const place = places.find((p) => String(p._id) === e.target.value);
-                  if (place) selectDestination(place);
+                  if (place) {
+                    addWaypointFromPlace(place);
+                    e.target.value = "";
+                  }
                 }}
               >
                 <option value="" disabled>
-                  -- Select an ExploreX Destination --
+                  -- Add an ExploreX Landmark --
                 </option>
                 {places.map((place) => (
                   <option key={place._id} value={place._id}>
@@ -646,69 +1078,130 @@ function Navigate() {
                 ))}
               </select>
             )}
-
-            {destinationPoint && (
-              <div className="destination-preview-card">
-                {destinationPoint.placeObj?.image && (
-                  <img
-                    src={destinationPoint.placeObj.image}
-                    alt={destinationPoint.name}
-                    className="destination-preview-img"
-                    onError={(e) => {
-                      e.target.style.display = "none";
-                    }}
-                  />
-                )}
-                <div>
-                  <strong>{destinationPoint.name}</strong>
-                  <p style={{ margin: "2px 0", fontSize: "12px", color: "#555" }}>
-                    📍 {[destinationPoint.placeObj?.city, destinationPoint.placeObj?.country].filter(Boolean).join(", ")}
-                  </p>
-                  <span className="category-tag">
-                    {destinationPoint.placeObj?.category || "Tourist Spot"}
-                  </span>
-                </div>
-              </div>
-            )}
           </div>
 
-          {/* 3. Action Buttons & Route Output */}
+          {/* 3. Routing Mode & Calculation */}
           <div className="navigate-card">
+            <h3>3. Routing Algorithm Strategy</h3>
+
+            <div className="routing-strategy-toggle">
+              <label className={`strategy-radio-label ${routeStrategy === "shortest" ? "active" : ""}`}>
+                <input
+                  type="radio"
+                  name="routeStrategy"
+                  value="shortest"
+                  checked={routeStrategy === "shortest"}
+                  onChange={() => setRouteStrategy("shortest")}
+                />
+                <div>
+                  <strong>Shortest Distance (TSP)</strong>
+                  <span>Minimizes total road kilometers</span>
+                </div>
+              </label>
+
+              <label className={`strategy-radio-label ${routeStrategy === "fastest" ? "active" : ""}`}>
+                <input
+                  type="radio"
+                  name="routeStrategy"
+                  value="fastest"
+                  checked={routeStrategy === "fastest"}
+                  onChange={() => setRouteStrategy("fastest")}
+                />
+                <div>
+                  <strong>Fastest Travel Time</strong>
+                  <span>Prioritizes quickest highways</span>
+                </div>
+              </label>
+
+              <label className={`strategy-radio-label ${routeStrategy === "fixed" ? "active" : ""}`}>
+                <input
+                  type="radio"
+                  name="routeStrategy"
+                  value="fixed"
+                  checked={routeStrategy === "fixed"}
+                  onChange={() => setRouteStrategy("fixed")}
+                />
+                <div>
+                  <strong>Sequential Order</strong>
+                  <span>Follows exact user list order</span>
+                </div>
+              </label>
+            </div>
+
             <button
               type="button"
               className="navigate-btn route-calc-btn"
               onClick={handleCalculateRoute}
-              disabled={routing || !startPoint || !destinationPoint}
+              disabled={routing || (waypoints.length < 2 && (!startPoint || !destinationPoint))}
             >
-              {routing ? "Calculating Shortest Route..." : "🧭 Calculate Shortest Route"}
+              {routing
+                ? "Calculating Practical Route..."
+                : routeStrategy === "shortest" && waypoints.length >= 3
+                ? `🧭 Calculate Shortest Route (${waypoints.length} Stops)`
+                : "🧭 Calculate Route"}
             </button>
 
             {routeError && (
-              <p className="error-message" style={{ marginTop: "12px" }}>
-                ⚠️ {routeError}
-              </p>
+              <div className="error-message" style={{ marginTop: "12px" }}>
+                <span>⚠️ {routeError}</span>
+                <div style={{ marginTop: "8px" }}>
+                  <a
+                    href={getGoogleMapsUrl()}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="ext-nav-btn gmaps-btn"
+                    style={{ display: "inline-block", fontSize: "12px", padding: "6px 12px" }}
+                  >
+                    🗺️ Open Waypoints in Google Maps Directions
+                  </a>
+                </div>
+              </div>
             )}
 
             {routeInfo && (
               <div className="route-results-box">
                 <div className="route-badge shortest">
-                  ⭐ Shortest Distance Route (Selected)
+                  {routeInfo.strategyLabel}
                 </div>
 
                 <div className="route-metric-grid">
                   <div className="route-metric">
                     <span className="metric-label">Total Distance</span>
-                    <strong className="metric-value">{routeInfo.shortest.distanceKm} km</strong>
+                    <strong className="metric-value">{routeInfo.distanceKm} km</strong>
                   </div>
                   <div className="route-metric">
                     <span className="metric-label">Estimated Drive Time</span>
-                    <strong className="metric-value">{routeInfo.shortest.durationFormatted}</strong>
+                    <strong className="metric-value">{routeInfo.durationFormatted}</strong>
                   </div>
                 </div>
 
+                {/* If multi-stop TSP was solved, show optimized visiting sequence */}
+                {routeInfo.isMultiStopTSP && routeInfo.sequence && (
+                  <div className="route-sequence-display">
+                    <strong>✅ Optimized Visiting Sequence (Minimum Distance):</strong>
+                    <ol className="sequence-step-list">
+                      {routeInfo.sequence.map((step) => (
+                        <li key={step.order}>
+                          <span className="sequence-step-name">{step.name}</span>
+                        </li>
+                      ))}
+                    </ol>
+                  </div>
+                )}
+
+                {/* Distinct Comparison between Shortest Distance and Fastest Time */}
                 {routeInfo.hasAlternative && (
                   <div className="route-comparison-note">
-                    ℹ️ <strong>Alternative:</strong> Fastest route is {routeInfo.fastest.distanceKm} km ({routeInfo.fastest.durationFormatted}). ExploreX prioritized the shortest road distance ({routeInfo.shortest.distanceKm} km).
+                    ℹ️ <strong>Route Tradeoff:</strong>
+                    {routeInfo.strategy === "shortest" ? (
+                      <span>
+                        {" "}Fastest alternative is {routeInfo.fastest.distanceKm} km ({routeInfo.fastest.durationFormatted}). Shortest distance was chosen to save {(routeInfo.fastest.distanceKm - routeInfo.shortest.distanceKm).toFixed(2)} km.
+                      </span>
+                    ) : (
+                      <span>
+                        {" "}Shortest alternative is {routeInfo.shortest.distanceKm} km ({routeInfo.shortest.durationFormatted}). Fastest route was chosen for quicker transit.
+                      </span>
+                    )}
                   </div>
                 )}
 
@@ -728,7 +1221,7 @@ function Navigate() {
                     className="ext-nav-btn ride-toggle-btn"
                     onClick={() => setShowRidePanel(!showRidePanel)}
                   >
-                    🚖 Book a Ride
+                    🚕 Book a Ride
                   </button>
                 </div>
               </div>
@@ -736,10 +1229,10 @@ function Navigate() {
           </div>
 
           {/* 4. External Ride Booking Options */}
-          {showRidePanel && destinationPoint && (
+          {showRidePanel && (
             <div className="navigate-card ride-booking-panel">
               <div className="ride-panel-header">
-                <h3>🚖 External Ride Booking</h3>
+                <h3>🚕 External Ride Booking</h3>
                 <span className="provider-badge">Uber & Ola</span>
               </div>
 
@@ -800,9 +1293,10 @@ function Navigate() {
 
           {/* Map floating quick guide */}
           <div className="map-legend-overlay">
-            <div>📍 <strong>Green:</strong> Pickup / Start</div>
-            <div>🏁 <strong>Red:</strong> Destination</div>
-            <div>🏛️ <strong>Dark Green:</strong> ExploreX Landmark</div>
+            <div>🚩 <strong>Green:</strong> Starting Point</div>
+            <div>🏁 <strong>Red:</strong> Final Endpoint</div>
+            <div>📍 <strong>Gold:</strong> Intermediate Waypoints</div>
+            <div>🗺️ <strong>Dark Green:</strong> ExploreX Landmarks</div>
           </div>
         </section>
       </div>
