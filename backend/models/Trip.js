@@ -1,4 +1,3 @@
-
 const mongoose = require("mongoose");
 
 const tripSchema = new mongoose.Schema(
@@ -54,5 +53,8 @@ const tripSchema = new mongoose.Schema(
     timestamps: true,
   }
 );
+
+// Index to optimize user trips retrieval sorted by creation date
+tripSchema.index({ user: 1, createdAt: -1 });
 
 module.exports = mongoose.model("Trip", tripSchema);

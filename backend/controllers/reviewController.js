@@ -3,7 +3,7 @@ const Review = require("../models/Review");
 // CREATE review
 const createReview = async (req, res) => {
   try {
-    const userId = req.user?.id || req.body.user;
+    const userId = req.user?.id;
     const placeId = req.body.place;
     const { rating, comment } = req.body;
 
@@ -102,17 +102,41 @@ const getReviewsByPlace = async (req, res) => {
 // UPDATE review
 const updateReview = async (req, res) => {
   try {
-    const review = await Review.findByIdAndUpdate(
-      req.params.id,
-      req.body,
-      { returnDocument: 'after', runValidators: true }
-    );
+    const existing = await Review.findById(req.params.id);
 
-    if (!review) {
+    if (!existing) {
       return res.status(404).json({
         message: "Review not found",
       });
     }
+
+    // Ownership check: only review author or admin can update
+    if (existing.user.toString() !== req.user.id && req.user.role !== "admin") {
+      return res.status(403).json({
+        message: "Not authorized to modify this review.",
+      });
+    }
+
+    const updates = {};
+    if (req.body.rating != null) {
+      const r = Number(req.body.rating);
+      if (r < 1 || r > 5) {
+        return res.status(400).json({ message: "Rating must be between 1 and 5." });
+      }
+      updates.rating = r;
+    }
+    if (req.body.comment != null) {
+      if (!req.body.comment.trim()) {
+        return res.status(400).json({ message: "Comment cannot be empty." });
+      }
+      updates.comment = req.body.comment.trim();
+    }
+
+    const review = await Review.findByIdAndUpdate(
+      req.params.id,
+      updates,
+      { returnDocument: 'after', runValidators: true }
+    );
 
     res.status(200).json({
       message: "Review updated successfully",
@@ -128,13 +152,22 @@ const updateReview = async (req, res) => {
 // DELETE review
 const deleteReview = async (req, res) => {
   try {
-    const review = await Review.findByIdAndDelete(req.params.id);
+    const existing = await Review.findById(req.params.id);
 
-    if (!review) {
+    if (!existing) {
       return res.status(404).json({
         message: "Review not found",
       });
     }
+
+    // Ownership check: only review author or admin can delete
+    if (existing.user.toString() !== req.user.id && req.user.role !== "admin") {
+      return res.status(403).json({
+        message: "Not authorized to delete this review.",
+      });
+    }
+
+    await Review.findByIdAndDelete(req.params.id);
 
     res.status(200).json({
       message: "Review deleted successfully",

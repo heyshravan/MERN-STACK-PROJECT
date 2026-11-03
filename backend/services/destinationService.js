@@ -28,6 +28,25 @@ function setCache(key, data) {
   });
 }
 
+// Resilient external fetch wrapper with 6-second timeout
+async function fetchWithTimeout(url, options = {}, timeoutMs = 6000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    });
+  } catch (err) {
+    if (err.name === "AbortError") {
+      throw new Error(`External API request timed out after ${timeoutMs}ms: ${url}`);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 // Classify Geographic Entity Type
 function classifyType(title = "", description = "") {
   const d = (description || "").toLowerCase();
@@ -168,7 +187,7 @@ async function searchDestinations(rawQuery) {
       query
     )}&limit=10&namespace=0&format=json`;
 
-    const res = await fetch(openSearchUrl, {
+    const res = await fetchWithTimeout(openSearchUrl, {
       headers: { "User-Agent": "ExploreX-Tourism-Platform/2.0 (explorex@example.com)" },
     });
 
@@ -181,7 +200,7 @@ async function searchDestinations(rawQuery) {
       const summaryPromises = titles.slice(0, 6).map(async (title, idx) => {
         try {
           const sumUrl = `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title)}`;
-          const sumRes = await fetch(sumUrl, {
+          const sumRes = await fetchWithTimeout(sumUrl, {
             headers: { "User-Agent": "ExploreX-Tourism-Platform/2.0 (explorex@example.com)" },
           });
           if (!sumRes.ok) return null;
@@ -262,7 +281,7 @@ async function getDestinationDetails(queryOrSlug) {
 
   try {
     const sumUrl = `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(query)}`;
-    const sumRes = await fetch(sumUrl, {
+    const sumRes = await fetchWithTimeout(sumUrl, {
       headers: { "User-Agent": "ExploreX-Tourism-Platform/2.0 (explorex@example.com)" },
     });
     if (sumRes.ok) {
@@ -270,14 +289,14 @@ async function getDestinationDetails(queryOrSlug) {
       wikiTitle = summary.title;
     } else {
       // Fallback: search opensearch to find exact page title
-      const osRes = await fetch(
+      const osRes = await fetchWithTimeout(
         `https://en.wikipedia.org/w/api.php?action=opensearch&search=${encodeURIComponent(query)}&limit=1&format=json`,
         { headers: { "User-Agent": "ExploreX-Tourism-Platform/2.0 (explorex@example.com)" } }
       );
       const osData = await osRes.json();
       if (osData[1]?.[0]) {
         wikiTitle = osData[1][0];
-        const secondTry = await fetch(
+        const secondTry = await fetchWithTimeout(
           `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(wikiTitle)}`,
           { headers: { "User-Agent": "ExploreX-Tourism-Platform/2.0 (explorex@example.com)" } }
         );
@@ -301,7 +320,7 @@ async function getDestinationDetails(queryOrSlug) {
   let weather = null;
   try {
     const weatherUrl = `https://api.open-meteo.com/v1/forecast?latitude=${coordinates.lat}&longitude=${coordinates.lon}&current=temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m&daily=temperature_2m_max,temperature_2m_min&timezone=auto`;
-    const wRes = await fetch(weatherUrl);
+    const wRes = await fetchWithTimeout(weatherUrl);
     if (wRes.ok) {
       const wData = await wRes.json();
       const current = wData.current || {};
@@ -338,7 +357,7 @@ async function getDestinationDetails(queryOrSlug) {
       wikiTitle
     )}&gimlimit=30&prop=imageinfo&iiprop=url|size&iiurlwidth=1200&format=json`;
 
-    const photoRes = await fetch(photoUrl, {
+    const photoRes = await fetchWithTimeout(photoUrl, {
       headers: { "User-Agent": "ExploreX-Tourism-Platform/2.0 (explorex@example.com)" },
     });
     if (photoRes.ok) {
@@ -382,7 +401,7 @@ async function getDestinationDetails(queryOrSlug) {
   const attractions = [];
   try {
     const geoUrl = `https://en.wikipedia.org/w/api.php?action=query&list=geosearch&gscoord=${coordinates.lat}|${coordinates.lon}&gsradius=10000&gslimit=20&format=json`;
-    const geoRes = await fetch(geoUrl, {
+    const geoRes = await fetchWithTimeout(geoUrl, {
       headers: { "User-Agent": "ExploreX-Tourism-Platform/2.0 (explorex@example.com)" },
     });
 
@@ -429,7 +448,7 @@ async function getDestinationDetails(queryOrSlug) {
 
       const poiPromises = validPoints.map(async (poi) => {
         try {
-          const pSumRes = await fetch(
+          const pSumRes = await fetchWithTimeout(
             `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(poi.title)}`,
             { headers: { "User-Agent": "ExploreX-Tourism-Platform/2.0 (explorex@example.com)" } }
           );

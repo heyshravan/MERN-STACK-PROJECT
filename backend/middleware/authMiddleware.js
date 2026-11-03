@@ -20,13 +20,19 @@ const protect = async (req, res, next) => {
       });
     }
 
-    // Lookup user to attach role
+    // Lookup user to attach role and verify account existence
     const user = await User.findById(decoded.id).select("role name email");
+    if (!user) {
+      return res.status(401).json({
+        message: "User account no longer exists or has been deactivated.",
+      });
+    }
+
     req.user = {
       id: decoded.id,
-      role: user?.role || "user",
-      name: user?.name || "",
-      email: user?.email || "",
+      role: user.role || "user",
+      name: user.name || "",
+      email: user.email || "",
     };
 
     next();

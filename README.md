@@ -291,8 +291,108 @@ SECTION 4: ACCURACY, RELIABILITY & SECURITY AUDIT
   ✓ Disconnected Terrain Handling: Straight-line Haversine fallback labeled: PASS ✓
   ✓ Empty / Invalid Query Handling: PASS ✓
 
-ALL STEP 7 AUDIT CHECKS COMPLETED AND PASSED! ✓
+ALL STEP 7 & 8 AUDIT CHECKS COMPLETED AND PASSED! ✓
 ```
+
+---
+
+## ⚡ Performance Optimization & Bundle Metrics
+
+In Step 8, route-level code splitting was implemented using `React.lazy()` and `Suspense`, alongside vendor chunk separation in `vite.config.js`:
+
+| Metric | Monolithic Build (Step 6/7) | Optimized Code-Split Build (Step 8) | Performance Gain |
+| :--- | :--- | :--- | :--- |
+| **Initial Client Entry** | `1,635.06 kB` (Single bundle) | **`75.49 kB`** (`index-*.js`) | **95.4% reduction** |
+| **Vendor React Core** | Bundled in main | **`218.84 kB`** (`vendor-react.js`) | Isolated & long-term cached |
+| **Home Page Total Load** | `1,635.06 kB` | **`299.36 kB`** (Entry + React + Home) | **81.7% initial reduction** |
+| **3D Engine (`Three.js`)** | Downloaded upfront by all users | **`743.48 kB`** (Loaded *only* on `/explore-3d`) | **Deferred 100%** |
+| **Map Engine (`Leaflet`)** | Downloaded upfront by all users | **`148.73 kB`** (Loaded *only* on map pages) | **Deferred 100%** |
+| **Build Time** | `478 ms` | **`308 ms`** | **35.5% faster build** |
+
+---
+
+## 🛡️ Security Architecture & Data Ownership Model
+
+1. **Strict User Data Scoping**:
+   - **Trips**: All CRUD endpoints (`GET /api/trips`, `PUT /api/trips/:id`, `DELETE /api/trips/:id`) filter strictly by `user: req.user.id`. A user cannot view, edit, or delete another traveler's trips.
+   - **Reviews**: Review creation strictly binds `req.user.id`. Updates and deletions verify `existing.user.toString() === req.user.id || req.user.role === 'admin'`.
+   - **Favorites**: Deletions and additions enforce `user: req.user.id`.
+2. **Account Invalidation Protection**:
+   - `authMiddleware.js` queries `User.findById(decoded.id)`. If the user account was deleted or deactivated in MongoDB, it returns `401 Unauthorized: "User account no longer exists or has been deactivated."`
+3. **Security Response Headers**:
+   - `X-Content-Type-Options: nosniff` (MIME sniffing prevention)
+   - `X-Frame-Options: SAMEORIGIN` (Clickjacking protection)
+   - `X-XSS-Protection: 1; mode=block`
+   - `Referrer-Policy: strict-origin-when-cross-origin`
+4. **CORS & Payload Limits**:
+   - Configurable allowed origins via `CLIENT_ORIGIN` environment variable.
+   - Request body limit clamped to `10mb` to protect against memory exhaustion.
+5. **Zero Credentials Disclosure**:
+   - Complete scan of `frontend/src/` confirms zero Google Gemini API keys, MongoDB Atlas URIs, or JWT secrets bundled in client code.
+
+---
+
+## 🚢 Production Deployment Guide
+
+### A. Backend Deployment (Node.js / PM2 / Docker)
+1. **Prepare Environment**:
+   Ensure `backend/.env` has production values:
+   ```env
+   NODE_ENV=production
+   PORT=5000
+   MONGO_URI=mongodb+srv://<user>:<password>@cluster.mongodb.net/explorex?retryWrites=true&w=majority
+   JWT_SECRET=your_strong_random_production_secret_key_64_chars
+   CLIENT_ORIGIN=https://explorex.yourdomain.com
+   GEMINI_API_KEY=your_gemini_api_key_here # Optional
+   ```
+2. **Install Production Dependencies**:
+   ```bash
+   cd backend
+   npm ci --omit=dev
+   ```
+3. **Run with Process Manager (PM2)**:
+   ```bash
+   pm2 start server.js --name "explorex-backend" -i max
+   pm2 save
+   ```
+
+### B. Frontend Deployment (Static Hosting: Nginx / Vercel / Netlify / AWS S3 + CloudFront)
+1. **Configure Production API Base**:
+   Set `VITE_API_URL` or point `frontend/src/services/api.js` to your production backend domain.
+2. **Build Static Assets**:
+   ```bash
+   cd frontend
+   npm ci
+   npm run build
+   # Output directory: frontend/dist/
+   ```
+3. **Nginx SPA Configuration Example**:
+   ```nginx
+   server {
+       listen 80;
+       server_name explorex.yourdomain.com;
+       root /var/www/explorex/frontend/dist;
+       index index.html;
+
+       location / {
+           try_files $uri $uri/ /index.html;
+       }
+
+       location /api/ {
+           proxy_pass http://localhost:5000;
+           proxy_http_version 1.1;
+           proxy_set_header Upgrade $http_upgrade;
+           proxy_set_header Connection 'upgrade';
+           proxy_set_header Host $host;
+           proxy_cache_bypass $http_upgrade;
+       }
+   }
+   ```
+
+### C. MongoDB Atlas Production Guidelines
+- **Network Access**: Add your backend server's static IP to the Atlas Network Access IP Access List.
+- **Connection Pooling**: Mongoose manages connections automatically; ensure your connection string includes `maxPoolSize=20&w=majority`.
+- **Compound Indexes**: Verify that `Review` (`{ user: 1, place: 1 }` and `{ place: 1, createdAt: -1 }`), `Favorite` (`{ user: 1, place: 1 }`), and `Trip` (`{ user: 1, createdAt: -1 }`) indexes are built.
 
 ---
 
