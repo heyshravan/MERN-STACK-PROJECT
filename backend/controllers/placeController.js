@@ -1,5 +1,5 @@
 
-const Place = require("../models/place");
+const Place = require("../models/Place");
 
 // CREATE a new place
 const createPlace = async (req, res) => {

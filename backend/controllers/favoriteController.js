@@ -1,6 +1,6 @@
 
 const mongoose = require("mongoose");
-const Favorite = require("../models/favorite");
+const Favorite = require("../models/Favorite");
 
 const addFavorite = async (req, res) => {
   try {

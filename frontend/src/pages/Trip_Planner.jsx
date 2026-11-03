@@ -1,4 +1,3 @@
-
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { getTrips, createTrip, deleteTrip } from "../services/api";
@@ -131,7 +130,7 @@ function Trip_Planner() {
   };
 
   return (
-    <div className="trip-planner">
+    <main className="trip-planner">
       <h1>AI Trip Planner</h1>
       <p>Plan your next adventure with ExploreX.</p>
 
@@ -188,7 +187,7 @@ function Trip_Planner() {
                 type="number"
                 name="budget"
                 min="0"
-                placeholder="Budget"
+                placeholder="Budget (₹)"
                 value={formData.budget}
                 onChange={handleChange}
               />
@@ -205,8 +204,8 @@ function Trip_Planner() {
               </button>
             </form>
 
-            {message && <p>{message}</p>}
-            {error && <p>{error}</p>}
+            {message && <p className="success-message">{message}</p>}
+            {error && <p className="error-message">{error}</p>}
           </section>
 
           <section>
@@ -217,28 +216,32 @@ function Trip_Planner() {
             ) : trips.length === 0 ? (
               <p>No trips saved yet. Create your first trip!</p>
             ) : (
-              trips.map((trip) => (
-                <div className="place-card" key={trip._id}>
-                  <h3>{trip.destination}</h3>
-                  <p>Start Date: {trip.startDate?.slice(0, 10)}</p>
-                  <p>End Date: {trip.endDate?.slice(0, 10)}</p>
-                  <p>Duration: {trip.duration} days</p>
-                  <p>Budget: ₹{trip.budget}</p>
-                  <p>
-                    Interests:{" "}
-                    {trip.interests?.join(", ") || "Not specified"}
-                  </p>
+              <div className="places-grid">
+                {trips.map((trip) => (
+                  <div className="place-card" key={trip._id}>
+                    <h3>{trip.destination}</h3>
+                    <p>Start Date: {trip.startDate?.slice(0, 10)}</p>
+                    <p>End Date: {trip.endDate?.slice(0, 10)}</p>
+                    <p>Duration: {trip.duration} days</p>
+                    <p>Budget: ₹{trip.budget}</p>
+                    <p>
+                      Interests:{" "}
+                      {trip.interests?.join(", ") || "Not specified"}
+                    </p>
 
-                  <button onClick={() => handleDelete(trip._id)}>
-                    Delete Trip
-                  </button>
-                </div>
-              ))
+                    <div className="place-actions">
+                      <button type="button" onClick={() => handleDelete(trip._id)}>
+                        Delete Trip
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
             )}
           </section>
         </>
       )}
-    </div>
+    </main>
   );
 }
 

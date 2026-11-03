@@ -1,4 +1,3 @@
-
 import { useEffect, useState } from "react";
 
 import {
@@ -244,7 +243,7 @@ function Explore() {
   // ================= PAGE UI =================
 
   return (
-    <div className="explore-page">
+    <main className="explore-page">
 
       <h1>Explore Destinations</h1>
 
@@ -429,7 +428,7 @@ function Explore() {
 
       </section>
 
-    </div>
+    </main>
   );
 }
 

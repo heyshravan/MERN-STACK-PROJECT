@@ -32,4 +32,24 @@ const protect = (req, res, next) => {
   }
 };
 
+const optionalAuth = (req, res, next) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith("Bearer ")) {
+      const token = authHeader.split(" ")[1];
+      if (token && token !== "null" && token !== "undefined") {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        if (decoded?.id) {
+          req.user = { id: decoded.id };
+        }
+      }
+    }
+  } catch (error) {
+    // Ignore invalid token for optional auth routes
+  }
+  next();
+};
+
 module.exports = protect;
+module.exports.protect = protect;
+module.exports.optionalAuth = optionalAuth;

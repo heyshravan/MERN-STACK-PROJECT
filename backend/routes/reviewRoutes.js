@@ -1,7 +1,6 @@
-
 const express = require("express");
-
 const router = express.Router();
+const { optionalAuth } = require("../middleware/authMiddleware");
 
 const {
   createReview,
@@ -12,7 +11,7 @@ const {
 } = require("../controllers/reviewController");
 
 // CREATE a review
-router.post("/", createReview);
+router.post("/", optionalAuth, createReview);
 
 // READ all reviews
 router.get("/", getReviews);

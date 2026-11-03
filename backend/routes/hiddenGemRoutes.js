@@ -1,5 +1,6 @@
 const express = require("express");
 const router = express.Router();
+const { optionalAuth } = require("../middleware/authMiddleware");
 
 const {
   createHiddenGem,
@@ -9,7 +10,7 @@ const {
   deleteHiddenGem,
 } = require("../controllers/hiddenGemController");
 
-router.post("/", createHiddenGem);
+router.post("/", optionalAuth, createHiddenGem);
 router.get("/", getHiddenGems);
 router.get("/all", getAllHiddenGems);
 router.patch("/:id/status", updateHiddenGemStatus);

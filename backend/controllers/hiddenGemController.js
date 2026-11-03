@@ -1,9 +1,19 @@
-const HiddenGem = require("../models/hiddengem");
+const HiddenGem = require("../models/HiddenGem");
 
 // Submit a hidden gem
 const createHiddenGem = async (req, res) => {
   try {
-    const hiddenGem = await HiddenGem.create(req.body);
+    const submittedBy = req.user?.id || req.body.submittedBy;
+    if (!submittedBy) {
+      return res.status(400).json({
+        message: "User authentication or submittedBy is required.",
+      });
+    }
+
+    const hiddenGem = await HiddenGem.create({
+      ...req.body,
+      submittedBy,
+    });
     res.status(201).json(hiddenGem);
   } catch (error) {
     res.status(400).json({ message: error.message });

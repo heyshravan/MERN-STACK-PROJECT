@@ -1,10 +1,19 @@
-
-const Review = require("../models/review");
+const Review = require("../models/Review");
 
 // CREATE review
 const createReview = async (req, res) => {
   try {
-    const review = await Review.create(req.body);
+    const userId = req.user?.id || req.body.user;
+    if (!userId) {
+      return res.status(400).json({
+        message: "User authentication or user ID is required to post a review.",
+      });
+    }
+
+    const review = await Review.create({
+      ...req.body,
+      user: userId,
+    });
 
     res.status(201).json({
       message: "Review created successfully",

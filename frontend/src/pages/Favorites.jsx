@@ -1,4 +1,3 @@
-
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { getFavorites, removeFavorite } from "../services/api";
@@ -55,21 +54,21 @@ function Favorites() {
 
   if (!user) {
     return (
-      <div className="favorites-page">
+      <main className="favorites-page">
         <h1>My Favorites</h1>
         <p>Please login to view your saved destinations.</p>
         <Link to="/login">Login Now</Link>
-      </div>
+      </main>
     );
   }
 
   return (
-    <div className="favorites-page">
+    <main className="favorites-page">
       <h1>My Favorite Destinations ❤️</h1>
       <p>Your saved places, all in one place.</p>
 
-      {message && <p>{message}</p>}
-      {error && <p>{error}</p>}
+      {message && <p className="success-message">{message}</p>}
+      {error && <p className="error-message">{error}</p>}
 
       {loading ? (
         <p>Loading your favorites...</p>
@@ -80,7 +79,7 @@ function Favorites() {
           <Link to="/explore">Explore Destinations</Link>
         </div>
       ) : (
-        <div className="place-grid">
+        <div className="places-grid">
           {favorites.map((favorite) => {
             const place = favorite.place;
 
@@ -99,22 +98,26 @@ function Favorites() {
                 <h3>{place.name}</h3>
                 <p>{place.description}</p>
                 <p>
-                  {place.city}, {place.state}, {place.country}
+                  {[place.city, place.state, place.country]
+                    .filter(Boolean)
+                    .join(", ")}
                 </p>
                 <p>Category: {place.category}</p>
 
-                <button
-                  type="button"
-                  onClick={() => handleRemove(favorite._id)}
-                >
-                  Remove from Favorites
-                </button>
+                <div className="place-actions">
+                  <button
+                    type="button"
+                    onClick={() => handleRemove(favorite._id)}
+                  >
+                    Remove from Favorites
+                  </button>
+                </div>
               </div>
             );
           })}
         </div>
       )}
-    </div>
+    </main>
   );
 }
 

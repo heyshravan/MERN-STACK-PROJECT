@@ -1,5 +1,5 @@
 
-const Trip = require("../models/trip");
+const Trip = require("../models/Trip");
 
 // CREATE trip for logged-in user
 const createTrip = async (req, res) => {

@@ -327,3 +327,37 @@ export const submitHiddenGem = async (gemData) => {
 
   return data;
 };
+
+// ================= AI ASSISTANT APIs =================
+
+// GET AI assistant status
+export const getAIStatus = async () => {
+  const response = await fetch(`${API_BASE_URL}/ai/status`);
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(data.message || "Failed to fetch AI assistant status");
+  }
+
+  return data;
+};
+
+// CHAT with AI assistant
+export const chatWithAI = async (message, history = []) => {
+  const response = await fetch(`${API_BASE_URL}/ai/chat`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ message, history }),
+  });
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(data.message || "Failed to communicate with AI Assistant");
+  }
+
+  return data;
+};

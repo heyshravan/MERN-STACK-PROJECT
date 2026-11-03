@@ -1,4 +1,3 @@
-
 function About() {
   return (
     <main>
